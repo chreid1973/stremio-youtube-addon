@@ -1,14 +1,11 @@
-//-----------------------------
-//  YouTube Universe (base)
-//-----------------------------
+//---------------------------------------------------------
+// YouTube Universe — simple, stable Stremio add-on
+//---------------------------------------------------------
 import { createRequire } from "module";
-import http from "http";
 const require = createRequire(import.meta.url);
-const { addonBuilder } = require("stremio-addon-sdk");
+const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 
-//-----------------------------
-//  Manifest
-//-----------------------------
+// ── Manifest ─────────────────────────────────────────────
 const manifest = {
   id: "community.youtube.universe",
   version: "1.0.0",
@@ -27,12 +24,10 @@ const manifest = {
   ]
 };
 
-//-----------------------------
-//  Build addon
-//-----------------------------
+// ── Builder ──────────────────────────────────────────────
 const builder = new addonBuilder(manifest);
 
-// Sample catalog handler
+// Catalog handler
 builder.defineCatalogHandler(async ({ id }) => {
   if (id === "youtube-demo") {
     return {
@@ -42,7 +37,7 @@ builder.defineCatalogHandler(async ({ id }) => {
           type: "series",
           name: "Rick Astley - Never Gonna Give You Up",
           poster: "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
-          description: "Example entry to confirm your addon works"
+          description: "Test entry to confirm your addon works."
         }
       ]
     };
@@ -50,43 +45,31 @@ builder.defineCatalogHandler(async ({ id }) => {
   return { metas: [] };
 });
 
-// Simple meta handler
+// Meta handler
 builder.defineMetaHandler(async ({ id }) => ({
   meta: {
     id,
     type: "series",
     name: "Sample Meta",
     poster: "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
-    description: "Demo meta handler"
+    description: "Demo meta handler works fine!"
   }
 }));
 
-// Stream handler — opens on YouTube
+// Stream handler
 builder.defineStreamHandler(async ({ id }) => {
   const videoId = id.replace(/^yt:/, "");
   return {
-    streams: [{ title: "🎬 Watch on YouTube", externalUrl: `https://www.youtube.com/watch?v=${videoId}` }]
+    streams: [
+      {
+        title: "🎬 Watch on YouTube",
+        externalUrl: `https://www.youtube.com/watch?v=${videoId}`
+      }
+    ]
   };
 });
 
-//-----------------------------
-//  Serve (no express / no serveHTTP)
-//-----------------------------
-const iface = builder.getInterface();
+// ── Serve ───────────────────────────────────────────────
 const port = process.env.PORT || 7000;
-
-const server = http.createServer((req, res) => {
-  if (req.url === "/manifest.json") {
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.end(JSON.stringify(manifest));
-    return;
-  }
-  if (typeof iface === "function") return iface(req, res);
-  if (iface && typeof iface.serve === "function") return iface.serve(req, res);
-  res.statusCode = 500;
-  res.end("Invalid Stremio interface");
-});
-
-server.listen(port, () => {
-  console.log(`✅ Add-on running: http://localhost:${port}/manifest.json`);
-});
+serveHTTP(builder.getInterface(), { port });
+console.log(`✅ Add-on running: http://localhost:${port}/manifest.json`);
