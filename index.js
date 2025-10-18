@@ -1,7 +1,13 @@
 // ────────────────────────────────────────────────────────────────
 //  YouTube Universe — Per-Channel Catalogs + Easy Favorites (search box)
 // ────────────────────────────────────────────────────────────────
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
 
+const app = express();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+app.use(express.static(path.join(__dirname, "public")));
 import fetch from "node-fetch";
 import pkg from "stremio-addon-sdk";
 const { addonBuilder, serveHTTP } = pkg;
@@ -291,7 +297,28 @@ builder.defineStreamHandler(async ({ id }) => {
   };
 });
 
-// ── Serve with the SDK’s native server (default Stremio page) ─
+// ── Express + Add-on Serve ───────────────────────────────
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import pkg from "stremio-addon-sdk";
+const { addonBuilder } = pkg;
+
+const app = express();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Serve the static web UI
+app.use(express.static(path.join(__dirname, "public")));
+
+// Serve Stremio add-on interface
+const addonInterface = builder.getInterface();
+app.get("/manifest.json", (_, res) => res.json(addonInterface.manifest));
+app.get("/catalog/:type/:id.json", addonInterface.get);
+app.get("/meta/:type/:id.json", addonInterface.get);
+app.get("/stream/:type/:id.json", addonInterface.get);
+
+// Start server
 const port = process.env.PORT || 7000;
-serveHTTP(builder.getInterface(), { port });
-console.log(`✅ Add-on running at http://localhost:${port}/manifest.json`);
+app.listen(port, () => {
+  console.log(`✅ Web + Add-on running on port ${port}`);
+});
