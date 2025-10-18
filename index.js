@@ -5,8 +5,7 @@
 import fetch from "node-fetch";
 import pkg from "stremio-addon-sdk";
 const { addonBuilder, serveHTTP } = pkg;
-// Pull this many uploads per channel (YouTube caps at 50)
-const VIDEOS_PER_CHANNEL;
+
 
 
 
