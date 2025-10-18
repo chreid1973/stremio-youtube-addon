@@ -152,28 +152,57 @@ function parseChannelTokens(raw) {
   return all;
 }
 
+// Cache to avoid repeating lookups during a session
+const HANDLE_CACHE = new Map();
+
 async function resolveHandlesToIds(tokens) {
   const out = [];
+
   for (const t of tokens) {
     if (t.type === "id") {
       out.push(t.value);
-    } else {
-      try {
-        const res = await yt("search", {
-          part: "snippet",
-          q: `@${t.value}`,
-          type: "channel",
-          maxResults: "1"
-        });
-        const cid = res.items?.[0]?.id?.channelId;
-        if (cid) out.push(cid);
-      } catch {
-        // ignore individual lookup errors
+      continue;
+    }
+
+    const handle = t.value.replace(/^@/, "").toLowerCase();
+    if (HANDLE_CACHE.has(handle)) {
+      out.push(HANDLE_CACHE.get(handle));
+      continue;
+    }
+
+    // 1-unit call: channels.list with forHandle
+    try {
+      const ch = await yt("channels", { part: "id", forHandle: handle });
+      const cid = ch.items?.[0]?.id;
+      if (cid) {
+        HANDLE_CACHE.set(handle, cid);
+        out.push(cid);
+        continue;
       }
+    } catch (_) { /* fall through to legacy fallback */ }
+
+    // Legacy fallback only if needed (costly: 100 units)
+    try {
+      const res = await yt("search", {
+        part: "snippet",
+        q: `@${handle}`,
+        type: "channel",
+        maxResults: "1"
+      });
+      const cid = res.items?.[0]?.id?.channelId;
+      if (cid) {
+        HANDLE_CACHE.set(handle, cid);
+        out.push(cid);
+      }
+    } catch (_) {
+      // swallow; no ID for this token
     }
   }
+
+  // Deduplicate
   return Array.from(new Set(out));
 }
+
 
 async function fetchUploadsMetas(channelId, maxResults = VIDEOS_PER_CHANNEL) {
   const ch = await yt("channels", { part: "contentDetails", id: channelId });
