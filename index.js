@@ -1,22 +1,26 @@
 // ────────────────────────────────────────────────────────────────
-//  YouTube Universe — Per-Channel Catalogs + Easy Favorites (search box)
+//  YouTube Universe — Per-Channel Catalogs + Easy Favorites
+//  (SDK-only server; no Express; robust handle/URL parsing)
 // ────────────────────────────────────────────────────────────────
 
 import pkg from "stremio-addon-sdk";
-import path from "path";
-import { fileURLToPath } from "url";
 import fetch from "node-fetch";
 
 const { addonBuilder, serveHTTP } = pkg;
 
-
-// ── Environment Vars (Render → Environment) ─────────────────────
+// ── Environment Vars ────────────────────────────────────────────
+// Required:
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
-const JSONBIN_ID = process.env.JSONBIN_ID;       // optional, for fallback
-const JSONBIN_KEY = process.env.JSONBIN_KEY;     // optional
 
-// Pull this many uploads per channel (YouTube caps at 50)
-const VIDEOS_PER_CHANNEL = Math.min(Number(process.env.VIDEOS_PER_CHANNEL) || 20, 50);
+// Optional (used only if user favorites search box is empty):
+const JSONBIN_ID  = process.env.JSONBIN_ID || "";
+const JSONBIN_KEY = process.env.JSONBIN_KEY || "";
+
+// How many uploads per channel (YouTube caps per request at 50)
+const VIDEOS_PER_CHANNEL = Math.min(
+  Number(process.env.VIDEOS_PER_CHANNEL) || 20,
+  50
+);
 
 // ── Channel Groups (curated) ───────────────────────────────────
 const CHANNEL_GROUPS = {
@@ -26,8 +30,7 @@ const CHANNEL_GROUPS = {
     { id: "UCBJycsmduvYEL83R_U4JriQ", name: "MKBHD" }
   ],
   Automotive: [
-    { id: "UCyXiDU5qjfOPxgOPeFWGwKw", name: "Throttle House" },
-    { id: "UCWqW23Ko6dbscptZYyQE-8A", name: "ZIP TIE TUNING" }
+    { id: "UCyXiDU5qjfOPxgOPeFWGwKw", name: "Throttle House" }
   ],
   Podcasts: [
     { id: "UCFP1dDbFt0B7X6M2xPDj1bA", name: "WVFRM Podcast" },
@@ -42,7 +45,7 @@ const CHANNEL_GROUPS = {
 // ── Manifest ───────────────────────────────────────────────────
 const manifest = {
   id: "community.youtube.universe",
-  version: "3.2.2",
+  version: "3.3.0",
   name: "YouTube Universe",
   description: [
     "Per-channel YouTube catalogs by category, plus easy favorites.",
@@ -54,14 +57,17 @@ const manifest = {
     "   @mkbhd, @LinusTechTips, https://www.youtube.com/@throttlehouse",
     "4) Press Enter",
     "",
-    "Leave Search empty to use the saved JSONBin list.",
+    "Shortcuts: pack:tech  pack:auto  pack:podcasts  pack:entertainment",
+    "",
+    "Leave Search empty to use the saved JSONBin list (if configured).",
     "Streams open directly on YouTube."
   ].join("\n"),
+  logo: "https://www.youtube.com/s/desktop/d743f786/img/favicon_144x144.png",
   resources: ["catalog", "meta", "stream"],
   types: ["series"],
   idPrefixes: ["yt"],
   catalogs: [
-    // one catalog per CHANNEL (keeps pages clean), grouped in the name
+    // One catalog per channel, grouped in the name for tidy browsing
     ...Object.entries(CHANNEL_GROUPS).flatMap(([group, chans]) =>
       chans.map(ch => ({
         type: "series",
@@ -69,7 +75,7 @@ const manifest = {
         name: `YouTube Universe: ${group} – ${ch.name}`
       }))
     ),
-    // Favorites: use built-in 'search' box
+    // Favorites via built-in 'search' (appears as the big search box)
     {
       type: "series",
       id: "youtube-user",
@@ -86,9 +92,13 @@ async function yt(endpoint, params = {}) {
   if (!YOUTUBE_API_KEY) throw new Error("Missing YOUTUBE_API_KEY");
   const url = new URL(`https://www.googleapis.com/youtube/v3/${endpoint}`);
   url.searchParams.append("key", YOUTUBE_API_KEY);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, v));
+  for (const [k, v] of Object.entries(params)) url.searchParams.append(k, v);
   const r = await fetch(url);
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) {
+    const body = await r.text();
+    console.error("[YT] ERROR", endpoint, r.status, r.statusText, body.slice(0, 200));
+    throw new Error(`YT ${endpoint} ${r.status}`);
+  }
   return r.json();
 }
 
@@ -98,10 +108,12 @@ async function fetchBin() {
   const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_ID}/latest`, { headers });
   if (!res.ok) return [];
   const data = await res.json();
-  return data?.record?.channels || [];
+  // Accept either ["UC..."] or [{ id, name }]
+  const arr = data?.record?.channels || [];
+  return arr.map(x => (typeof x === "string" ? { id: x, name: x } : x)).filter(Boolean);
 }
 
-// Extract channels from any messy text: @handles, UC…, URLs
+// Extract @handles, UC ids, channel URLs from any blob of text
 function parseChannelTokens(raw) {
   const text = String(raw || "");
 
@@ -173,8 +185,8 @@ async function fetchUploadsMetas(channelId, maxResults = VIDEOS_PER_CHANNEL) {
     maxResults: String(Math.min(maxResults, 50))
   });
   return (pl.items || []).map(item => {
-    const s = item.snippet;
-    const t = s?.thumbnails || {};
+    const s = item.snippet || {};
+    const t = s.thumbnails || {};
     return {
       id: `yt:${s.resourceId.videoId}`,
       type: "series",
@@ -198,11 +210,11 @@ builder.defineCatalogHandler(async ({ id, extra }) => {
     const ch = CHANNEL_GROUPS[groupKey]?.find(c => c.id === channelId);
     if (ch) channels = [ch];
   }
-  // Favorites: use built-in 'search' box; fall back to JSONBin
+  // Favorites via built-in 'search'; fallback to JSONBin if empty
   else if (id === "youtube-user") {
     const raw = (extra?.search || "").trim();
 
-    // Packs: pack:tech / pack:auto / pack:podcasts / pack:entertainment
+    // Pack shortcuts
     if (raw) {
       const packMatch = raw.match(/^pack:(tech|auto(?:motive)?|podcasts?|entertainment)$/i);
       if (packMatch) {
@@ -219,22 +231,17 @@ builder.defineCatalogHandler(async ({ id, extra }) => {
       }
     }
 
-    // If not a pack (or not found), parse free-form input
+    // If not a pack or not found, parse free-form
     if (!channels.length && raw) {
       const parsed = parseChannelTokens(raw);
       const channelIds = await resolveHandlesToIds(parsed);
       channels = channelIds.map(cid => ({ id: cid, name: cid }));
     }
 
-    // If search empty, fall back to JSONBin
+    // If search empty, fall back to JSONBin (optional)
     if (!channels.length && !raw) {
-      try {
-        channels = (await fetchBin()).map(c =>
-          (typeof c === "string" ? { id: c, name: c } : c)
-        );
-      } catch {
-        channels = [];
-      }
+      try { channels = await fetchBin(); }
+      catch { channels = []; }
     }
   }
 
@@ -267,7 +274,7 @@ builder.defineMetaHandler(async ({ id }) => {
         name: v.snippet.title,
         poster: t.high?.url || t.medium?.url || t.default?.url,
         background: t.maxres?.url || t.high?.url,
-        description: `${v.snippet.description || ""}\n👁 ${v.statistics?.viewCount || 0} views`,
+        description: `${v.snippet.description || ""}\nViews: ${v.statistics?.viewCount || 0}`,
         videos: [{ id, title: v.snippet.title, season: 1, episode: 1, released: v.snippet.publishedAt }]
       }
     };
@@ -285,13 +292,7 @@ builder.defineStreamHandler(async ({ id }) => {
   };
 });
 
-
-// --- Serve ONLY the Stremio add-on (stable) ---
-
-
+// ── Serve with the SDK’s native server (stable) ────────
 const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port });
-console.log(`✅ Add-on running: http://localhost:${port}/manifest.json`);
-
-
-
+console.log(`✅ Add-on running at http://localhost:${port}/manifest.json`);
