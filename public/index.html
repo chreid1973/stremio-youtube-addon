@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>YouTube Universe · Stremio Add-on</title>
+  <body style="font-family: system-ui; padding: 24px">
+    <h1>🎬 YouTube Universe</h1>
+    <p>Install via manifest URL:</p>
+    <code id="m"></code>
+    <script>
+      const m = location.origin + "/manifest.json";
+      document.getElementById("m").textContent = m;
+    </script>
+    <p><a href="/manifest.json">Open manifest.json</a></p>
+    <p><a href="https://github.com/chreid1973/stremio-youtube-addon">GitHub Repo</a></p>
+  </body>
+</html>
