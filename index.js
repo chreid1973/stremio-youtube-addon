@@ -1,15 +1,23 @@
+//---------------------------------------------------------
+// YouTube Universe — per-channel catalogs + saved favorites
+//---------------------------------------------------------
 import sdk from "stremio-addon-sdk";
 const { addonBuilder, serveHTTP } = sdk;
-import fetch from "node-fetch";
+import fetch from "node-fetch"; // if Render complains, `npm i node-fetch@3`
 
-/* ───────────────────────────────
-   CONFIG
-──────────────────────────────── */
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+// ── Required env vars ───────────────────────────────────
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;      // YouTube Data API v3
+const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID || "";  // e.g. "66a1b2c3d4e5f6a7b8c9"
+const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY || "";
+const JSONBIN_URL = JSONBIN_BIN_ID ? `https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}` : "";
 
-/* ───────────────────────────────
-   CATEGORY DEFINITIONS
-──────────────────────────────── */
+// Fail fast if missing YT key
+if (!YOUTUBE_API_KEY) {
+  console.error("❌ Missing YOUTUBE_API_KEY");
+  process.exit(1);
+}
+
+// ── Curated categories (your channels) ──────────────────
 const CATEGORIES = {
   Tech: [
     { id: "UCXuqSBlHAE6Xw-yeJA0Tunw", name: "Linus Tech Tips" },
@@ -29,14 +37,12 @@ const CATEGORIES = {
   ]
 };
 
-/* ───────────────────────────────
-   MANIFEST
-──────────────────────────────── */
+// ── Manifest ─────────────────────────────────────────────
 const manifest = {
   id: "community.youtube.universe",
-  version: "2.0.0",
+  version: "3.0.0",
   name: "YouTube Universe",
-  description: "Curated YouTube channels + your own favorites",
+  description: "Curated YouTube channels by category + saved personal favorites",
   logo: "https://www.youtube.com/s/desktop/d743f786/img/favicon_144x144.png",
   types: ["series"],
   resources: ["catalog", "meta", "stream"],
@@ -45,212 +51,249 @@ const manifest = {
   behaviorHints: { configurable: false, configurationRequired: false }
 };
 
-/* Generate one catalog per category */
-for (const [cat] of Object.entries(CATEGORIES)) {
-  manifest.catalogs.push({
-    type: "series",
-    id: `youtube-${cat.toLowerCase()}`,
-    name: `${cat} Channels`
+// One catalog per *channel*, grouped by category in naming
+for (const [cat, channels] of Object.entries(CATEGORIES)) {
+  const catSlug = cat.toLowerCase();
+  channels.forEach((ch) => {
+    manifest.catalogs.push({
+      type: "series",
+      id: `youtube-${catSlug}-${ch.id}`,          // includes channel id
+      name: `${cat} — ${ch.name}`                 // renders “Tech — MKBHD”
+    });
   });
 }
 
-/* Add dynamic “Your Favorites” catalog */
+// Add the dynamic, saved favorites catalog
 manifest.catalogs.push({
   type: "series",
   id: "youtube-user",
   name: "Your YouTube Favorites",
-  extra: [{ name: "search", isRequired: false }]
+  extra: [
+    { name: "uid", isRequired: false },                                     // user id (short string)
+    { name: "action", isRequired: false, options: ["load","save","add","remove","clear"] },
+    { name: "search", isRequired: false }                                   // CSV of @handles / URLs / UC ids
+  ]
 });
 
 const builder = new addonBuilder(manifest);
 
-/* ───────────────────────────────
-   HELPERS
-──────────────────────────────── */
+// ── Tiny cache (kind to quota) ──────────────────────────
+const cache = new Map();
+const TTL = 60_000;
+const setCache = (k, v, t = TTL) => cache.set(k, { v, e: Date.now() + t });
+const getCache = (k) => { const x = cache.get(k); return x && x.e > Date.now() ? x.v : null; };
+
+// ── YouTube helper ──────────────────────────────────────
 async function yt(endpoint, params = {}) {
   const url = new URL(`https://www.googleapis.com/youtube/v3/${endpoint}`);
-  url.searchParams.append("key", YOUTUBE_API_KEY);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, v));
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "" && v !== "undefined") url.searchParams.set(k, v);
+  }
+  url.searchParams.set("key", YOUTUBE_API_KEY);
+  const k = url.toString();
+  const c = getCache(k); if (c) return c;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`YouTube API error ${res.status}`);
-  return res.json();
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    console.error("❌ YT error", res.status, res.statusText, endpoint, t.slice(0, 200));
+    throw new Error("YT error");
+  }
+  const json = await res.json(); setCache(k, json); return json;
 }
 
+// ── JSONBin helpers (persist favorites) ─────────────────
+async function binLoad() {
+  if (!JSONBIN_URL) return {};
+  const r = await fetch(`${JSONBIN_URL}?meta=false`, {
+    headers: { "X-Master-Key": JSONBIN_MASTER_KEY }
+  });
+  if (!r.ok) { console.warn("JSONBin read failed", r.status); return {}; }
+  return (await r.json()) || {};
+}
+async function binSave(full) {
+  if (!JSONBIN_URL) return false;
+  const r = await fetch(JSONBIN_URL, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Master-Key": JSONBIN_MASTER_KEY
+    },
+    body: JSON.stringify(full || {})
+  });
+  if (!r.ok) console.warn("JSONBin write failed", r.status);
+  return r.ok;
+}
+
+// ── Mapping helpers ─────────────────────────────────────
 function mapSnippet(snippet) {
+  const t = snippet.thumbnails || {};
+  const poster = t.high?.url || t.medium?.url || t.default?.url || null;
+  const bg = t.maxres?.url || t.high?.url || t.medium?.url || poster;
   return {
     id: `yt:${snippet.videoId}`,
     type: "series",
-    name: snippet.title,
-    poster: snippet.thumbnails?.high?.url || snippet.thumbnails?.default?.url,
-    background:
-      snippet.thumbnails?.maxres?.url ||
-      snippet.thumbnails?.high?.url ||
-      snippet.thumbnails?.default?.url,
-    description: snippet.description?.substring(0, 300) || "",
-    releaseInfo: snippet.publishedAt?.slice(0, 10),
+    name: snippet.title || "Untitled",
+    poster,
+    background: bg,
+    description: (snippet.description || "").slice(0, 300),
+    releaseInfo: snippet.publishedAt?.slice(0, 10) || "",
     posterShape: "landscape"
   };
 }
-
 function extractPossibleIdsOrHandles(input) {
-  return String(input)
-    .split(/[,\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  return String(input).split(/[,\n]/).map(s => s.trim()).filter(Boolean);
 }
 function guessChannelIdOrHandle(token) {
   const m1 = token.match(/\/channel\/(UC[0-9A-Za-z_-]{20,})/i);
   if (m1) return { type: "id", value: m1[1] };
   const m2 = token.match(/@([A-Za-z0-9._-]+)/);
   if (m2) return { type: "handle", value: m2[1] };
-  if (/^UC[0-9A-Za-z_-]{20,}$/.test(token))
-    return { type: "id", value: token };
+  if (/^UC[0-9A-Za-z_-]{20,}$/.test(token)) return { type: "id", value: token };
   return { type: "handle", value: token.replace(/^@/, "") };
 }
 async function resolveHandleToChannelId(handle) {
-  const res = await yt("search", {
-    part: "snippet",
-    q: `@${handle}`,
-    type: "channel",
-    maxResults: "1"
-  });
+  const res = await yt("search", { part: "snippet", q: `@${handle}`, type: "channel", maxResults: "1" });
   return res.items?.[0]?.id?.channelId || null;
 }
 
-/* ───────────────────────────────
-   CATALOG HANDLER
-──────────────────────────────── */
+// ── Catalog handler ─────────────────────────────────────
 builder.defineCatalogHandler(async ({ id, extra }) => {
-  const results = [];
-
-  /* Static categories */
-  const category = Object.keys(CATEGORIES).find(
-    (k) => `youtube-${k.toLowerCase()}` === id
-  );
-  if (category) {
-    for (const ch of CATEGORIES[category]) {
-      try {
-        const res = await yt("search", {
-          part: "snippet",
-          channelId: ch.id,
-          type: "video",
-          order: "date",
-          maxResults: "20"
-        });
-        results.push(
-          ...(res.items || [])
-            .filter((it) => it.id?.videoId)
-            .map((it) => mapSnippet({ ...it.snippet, videoId: it.id.videoId }))
-        );
-      } catch (err) {
-        console.warn("Catalog fetch failed", ch.id, err);
-      }
+  // Per-channel catalogs: id looks like "youtube-<cat>-<UCid>"
+  if (id.startsWith("youtube-") && id !== "youtube-user") {
+    const parts = id.split("-");
+    const channelId = parts[2]; // youtube-<cat>-<UC...>
+    if (!channelId) return { metas: [] };
+    try {
+      const res = await yt("search", {
+        part: "snippet",
+        channelId,
+        type: "video",
+        order: "date",
+        maxResults: "50"
+      });
+      const metas = (res.items || [])
+        .filter(it => it?.id?.videoId)
+        .map(it => mapSnippet({ ...it.snippet, videoId: it.id.videoId }));
+      return { metas };
+    } catch (e) {
+      console.error("Catalog channel fetch failed", channelId, e);
+      return { metas: [] };
     }
-    return { metas: results };
   }
 
-  /* Dynamic user catalog */
+  // Dynamic saved favorites
   if (id === "youtube-user") {
-    const query = extra?.search;
-    if (!query) return { metas: [] };
+    const uid = (extra?.uid || "").trim();
+    const action = (extra?.action || "load").toLowerCase();
+    const query = (extra?.search || "").trim();
 
-    const tokens = extractPossibleIdsOrHandles(query);
-    const channelIds = [];
-    for (const tok of tokens) {
-      const guess = guessChannelIdOrHandle(tok);
-      if (guess.type === "id") channelIds.push(guess.value);
-      else if (guess.type === "handle") {
-        try {
-          const cid = await resolveHandleToChannelId(guess.value);
-          if (cid) channelIds.push(cid);
-        } catch (e) {
-          console.warn("handle resolve failed:", guess.value);
+    const tokens = query ? extractPossibleIdsOrHandles(query) : [];
+
+    async function resolveAll(tokensArr) {
+      const out = [];
+      for (const tok of tokensArr) {
+        const g = guessChannelIdOrHandle(tok);
+        if (g.type === "id") out.push(g.value);
+        else {
+          try { const cid = await resolveHandleToChannelId(g.value); if (cid) out.push(cid); } catch {}
         }
       }
+      return Array.from(new Set(out));
     }
 
-    const unique = [...new Set(channelIds)];
-    for (const cid of unique) {
-      try {
-        const res = await yt("search", {
-          part: "snippet",
-          channelId: cid,
-          type: "video",
-          order: "date",
-          maxResults: "20"
-        });
-        results.push(
-          ...(res.items || [])
-            .filter((it) => it.id?.videoId)
-            .map((it) => mapSnippet({ ...it.snippet, videoId: it.id.videoId }))
-        );
-      } catch (err) {
-        console.warn("User fetch failed", cid, err);
+    // No uid → stateless preview from search
+    if (!uid) {
+      if (!tokens.length) return { metas: [] };
+      const channelIds = await resolveAll(tokens);
+      const metas = [];
+      for (const cid of channelIds) {
+        try {
+          const res = await yt("search", { part: "snippet", channelId: cid, type: "video", order: "date", maxResults: "20" });
+          metas.push(...(res.items || [])
+            .filter(it => it?.id?.videoId)
+            .map(it => mapSnippet({ ...it.snippet, videoId: it.id.videoId })));
+        } catch {}
       }
+      return { metas };
     }
-    return { metas: results };
+
+    // With uid → load/save/add/remove/clear against JSONBin
+    let db = await binLoad();              // { [uid]: string[] }
+    db[uid] = db[uid] || [];
+
+    if (action === "clear") {
+      db[uid] = [];
+      await binSave(db);
+    } else if ((action === "save" || action === "add" || action === "remove") && tokens.length) {
+      const newIds = await resolveAll(tokens);
+      if (action === "save") {
+        db[uid] = newIds;
+      } else if (action === "add") {
+        db[uid] = Array.from(new Set([...(db[uid] || []), ...newIds]));
+      } else if (action === "remove") {
+        const s = new Set(db[uid] || []);
+        newIds.forEach((x) => s.delete(x));
+        db[uid] = Array.from(s);
+      }
+      await binSave(db);
+    }
+
+    const channelIds = db[uid] || [];
+    if (!channelIds.length) return { metas: [] };
+
+    const metas = [];
+    for (const cid of channelIds) {
+      try {
+        const res = await yt("search", { part: "snippet", channelId: cid, type: "video", order: "date", maxResults: "20" });
+        metas.push(...(res.items || [])
+          .filter(it => it?.id?.videoId)
+          .map(it => mapSnippet({ ...it.snippet, videoId: it.id.videoId })));
+      } catch {}
+    }
+    return { metas };
   }
 
   return { metas: [] };
 });
 
-/* ───────────────────────────────
-   META HANDLER
-──────────────────────────────── */
+// ── Meta handler ────────────────────────────────────────
 builder.defineMetaHandler(async ({ id }) => {
-  const videoId = id.replace("yt:", "");
+  const videoId = id.replace(/^yt:/, "");
   try {
-    const res = await yt("videos", {
-      part: "snippet,contentDetails,statistics",
-      id: videoId
-    });
-    const v = res.items?.[0];
-    if (!v) return { meta: null };
-
-    const views = parseInt(v.statistics.viewCount || "0").toLocaleString();
-    const meta = {
-      id: `yt:${videoId}`,
-      type: "series",
-      name: v.snippet.title,
-      poster:
-        v.snippet.thumbnails?.high?.url ||
-        v.snippet.thumbnails?.default?.url,
-      description: `${v.snippet.description}\n\n👁 ${views} views`,
-      releaseInfo: v.snippet.publishedAt?.slice(0, 10),
-      posterShape: "landscape",
-      videos: [
-        {
+    const data = await yt("videos", { part: "snippet,contentDetails,statistics", id: videoId });
+    const v = data.items?.[0]; if (!v) return { meta: null };
+    const t = v.snippet?.thumbnails || {};
+    const poster = t.high?.url || t.medium?.url || t.default?.url || null;
+    const views = Number(v.statistics?.viewCount || 0).toLocaleString();
+    return {
+      meta: {
+        id: `yt:${videoId}`,
+        type: "series",
+        name: v.snippet?.title || "YouTube Video",
+        poster,
+        description: `${v.snippet?.description || ""}\n\n👁 ${views} views`,
+        releaseInfo: v.snippet?.publishedAt?.slice(0, 10) || "",
+        posterShape: "landscape",
+        videos: [{
           id: `yt:${videoId}:1:1`,
-          title: v.snippet.title,
-          released: v.snippet.publishedAt
-        }
-      ]
+          title: v.snippet?.title || "Episode",
+          released: v.snippet?.publishedAt || new Date().toISOString(),
+          season: 1, episode: 1
+        }]
+      }
     };
-    return { meta };
-  } catch (err) {
-    console.error("Meta error", err);
-    return { meta: null };
+  } catch (e) {
+    console.error("Meta error", e); return { meta: null };
   }
 });
 
-/* ───────────────────────────────
-   STREAM HANDLER
-──────────────────────────────── */
+// ── Stream handler: open on YouTube ─────────────────────
 builder.defineStreamHandler(async ({ id }) => {
-  const videoId = id.split(":")[1] || id;
-  return {
-    streams: [
-      {
-        title: "🎬 Open on YouTube",
-        externalUrl: `https://www.youtube.com/watch?v=${videoId}`
-      }
-    ]
-  };
+  const videoId = String(id).split(":")[1] || String(id).replace(/^yt:/, "");
+  return { streams: [{ title: "🎬 Open on YouTube", externalUrl: `https://www.youtube.com/watch?v=${videoId}` }] };
 });
 
-/* ───────────────────────────────
-   START SERVER
-──────────────────────────────── */
+// ── Serve ───────────────────────────────────────────────
 const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port });
-console.log(`✅ Add-on running on http://localhost:${port}/manifest.json`);
+console.log(`✅ Add-on running: http://localhost:${port}/manifest.json`);
