@@ -47,16 +47,16 @@ All feeds update automatically when creators upload new videos.
 
 You can add, load, and manage your own favorite channels directly from Stremio.
 
-1. Open **Your YouTube Favorites** in the add-on list.  
-2. Tap the filter icon (top-right).  
-3. Use these fields:
-   - **uid:** your personal ID (e.g. `cary01`)  
-   - **action:** `save`, `load`, `add`, `remove`, or `clear`  
-   - **search:** channel handles or URLs (comma-separated)  
-     ```
-     @veritasium, https://www.youtube.com/@Kurzgesagt
-     ```
-4. Click “Search” — your list is saved instantly and reloads next time you use the same `uid`.
+Per-channel YouTube catalogs by category + easy favorites.\n\n" +
+    
+    Add your own favorites:\n" +
+    1) Open the catalog: “Your YouTube Favorites”.\n" +
+    2) Use the big Search box at the top.\n" +
+    3) Paste comma-separated channels (handles/URLs/UC IDs), e.g.\n" +
+       @mkbhd, @LinusTechTips, https://www.youtube.com/@throttlehouse\n" +
+    4) Press Enter. Leave Search empty to use the saved JSONBin list.\n\n" +
+    Streams open on YouTube.
+uid`.
 
 Favorites persist via secure storage on [JSONBin.io](https://jsonbin.io) — no logins, no personal data collected.
 
