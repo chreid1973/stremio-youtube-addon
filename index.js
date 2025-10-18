@@ -28,8 +28,8 @@ const CATEGORIES = {
     { id: "UCyXiDU5qjfOPxgOPeFWGwKw", name: "Throttle House" }
   ],
   Podcasts: [
-    { id: "UCFP1dDbFt0B7X6M2xPDj1bA", name: "WVFRM Podcast" },
-    { id: "UCEcrRXW3oEYfUctetZTAWLw", name: "Team COCO" }
+    { id: "UCEcrRXW3oEYfUctetZTAWLw", name: "WVFRM Podcast" },
+    { id: "UCi7GJNg51C3jgmYTUwqoUXA", name: "Team COCO" }
   ],
   Entertainment: [
     { id: "UCa6vGFO9ty8v5KZJXQxdhaw", name: "Jimmy Kimmel LIVE" },
