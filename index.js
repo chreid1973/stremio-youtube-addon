@@ -1,142 +1,243 @@
 import sdk from "stremio-addon-sdk";
-import dotenv from "dotenv";
-dotenv.config();
-
 const { addonBuilder, serveHTTP } = sdk;
+import fetch from "node-fetch";
 
-const KEY = process.env.YOUTUBE_API_KEY;
-if (!KEY) { console.error("❌ Missing YOUTUBE_API_KEY in .env"); process.exit(1); }
+/* ───────────────────────────────
+   CONFIG
+──────────────────────────────── */
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 
-const CHANNELS = [
-   { id: "UCXuqSBlHAE6Xw-yeJA0Tunw", name: "Linus Tech Tips" },
-  { id: "UCBJycsmduvYEL83R_U4JriQ", name: "MKBHD" },
-  { id: "UCyXiDU5qjfOPxgOPeFWGwKw", name: "Throttle House" },
-  { id: "UCi7GJNg51C3jgmYTUwqoUXA", name: "Team Coco" }
-];
-const manifest = {
-  id: "community.youtube.channels",
-  version: "1.0.6",
-  name: "YouTube Channels (Simple)",
-  description: "Recent uploads via YouTube Data API v3",
-  resources: ["catalog","meta","stream"],
-  types: ["series"],
-  idPrefixes: ["yt"],
-  catalogs: CHANNELS.map(ch => ({
-    type: "series",
-    id: `youtube-${ch.id}`,
-    name: ch.name,
-    extra: [{ name: "skip", isRequired: false }]
-  }))
+/* ───────────────────────────────
+   CATEGORY DEFINITIONS
+──────────────────────────────── */
+const CATEGORIES = {
+  Tech: [
+    { id: "UCXuqSBlHAE6Xw-yeJA0Tunw", name: "Linus Tech Tips" },
+    { id: "UCdBK94H6oZT2Q7l0-b0xmMg", name: "Short Circuit - LTT" },
+    { id: "UCBJycsmduvYEL83R_U4JriQ", name: "MKBHD" }
+  ],
+  Automotive: [
+    { id: "UCyXiDU5qjfOPxgOPeFWGwKw", name: "Throttle House" }
+  ],
+  Podcasts: [
+    { id: "UCFP1dDbFt0B7X6M2xPDj1bA", name: "WVFRM Podcast" },
+    { id: "UCEcrRXW3oEYfUctetZTAWLw", name: "Team COCO" }
+  ],
+  Entertainment: [
+    { id: "UCa6vGFO9ty8v5KZJXQxdhaw", name: "Jimmy Kimmel LIVE" },
+    { id: "UCSpFnDQr88xCZ80N-X7t0nQ", name: "Corridor Crew MAIN" }
+  ]
 };
+
+/* ───────────────────────────────
+   MANIFEST
+──────────────────────────────── */
+const manifest = {
+  id: "community.youtube.universe",
+  version: "2.0.0",
+  name: "YouTube Universe",
+  description: "Curated YouTube channels + your own favorites",
+  logo: "https://www.youtube.com/s/desktop/d743f786/img/favicon_144x144.png",
+  types: ["series"],
+  resources: ["catalog", "meta", "stream"],
+  idPrefixes: ["yt"],
+  catalogs: [],
+  behaviorHints: { configurable: false, configurationRequired: false }
+};
+
+/* Generate one catalog per category */
+for (const [cat] of Object.entries(CATEGORIES)) {
+  manifest.catalogs.push({
+    type: "series",
+    id: `youtube-${cat.toLowerCase()}`,
+    name: `${cat} Channels`
+  });
+}
+
+/* Add dynamic “Your Favorites” catalog */
+manifest.catalogs.push({
+  type: "series",
+  id: "youtube-user",
+  name: "Your YouTube Favorites",
+  extra: [{ name: "search", isRequired: false }]
+});
 
 const builder = new addonBuilder(manifest);
 
-// tiny cache
-const cache = new Map();
-const TTL = 60000;
-const setCache = (k,v,t=TTL)=>cache.set(k,{v,e:Date.now()+t});
-const getCache = (k)=>{const x=cache.get(k); if(!x||Date.now()>x.e) return null; return x.v;};
-
-async function yt(endpoint, params) {
+/* ───────────────────────────────
+   HELPERS
+──────────────────────────────── */
+async function yt(endpoint, params = {}) {
   const url = new URL(`https://www.googleapis.com/youtube/v3/${endpoint}`);
-  for (const [k,val] of Object.entries(params)) {
-    if (val !== undefined && val !== null && val !== "" && val !== "undefined") url.searchParams.set(k,val);
-  }
-  url.searchParams.set("key", KEY);
-
-  const cacheKey = url.toString();
-  const c = getCache(cacheKey); if (c) return c;
-
+  url.searchParams.append("key", YOUTUBE_API_KEY);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, v));
   const res = await fetch(url);
-  if (!res.ok) {
-    const text = await res.text().catch(()=> "");
-    console.error("❌ YT error", res.status, res.statusText, "at", endpoint, text.slice(0,400));
-    throw new Error("YT error");
-  }
-  const json = await res.json(); setCache(cacheKey,json); return json;
+  if (!res.ok) throw new Error(`YouTube API error ${res.status}`);
+  return res.json();
 }
 
 function mapSnippet(snippet) {
-  const t = snippet?.thumbnails || {};
-  const poster = t.high?.url || t.medium?.url || t.default?.url || null;
-  const bg = t.maxres?.url || t.high?.url || t.medium?.url || poster;
   return {
-    id: `yt:${snippet?.resourceId?.videoId || snippet?.videoId || ""}`,
+    id: `yt:${snippet.videoId}`,
     type: "series",
-    name: snippet?.title || "Untitled",
-    poster,
-    background: bg,
-    description: (snippet?.description || "").slice(0,300),
-    releaseInfo: snippet?.publishedAt ? new Date(snippet.publishedAt).getFullYear().toString() : "",
+    name: snippet.title,
+    poster: snippet.thumbnails?.high?.url || snippet.thumbnails?.default?.url,
+    background:
+      snippet.thumbnails?.maxres?.url ||
+      snippet.thumbnails?.high?.url ||
+      snippet.thumbnails?.default?.url,
+    description: snippet.description?.substring(0, 300) || "",
+    releaseInfo: snippet.publishedAt?.slice(0, 10),
     posterShape: "landscape"
   };
 }
 
-// Catalog: search.list by channelId (robust & simple)
-builder.defineCatalogHandler(async ({ id, extra }) => {
-  const ch = CHANNELS.find(c => `youtube-${c.id}` === id);
-  if (!ch) return { metas: [] };
-
-  const pageToken = extra?.skip || undefined;
-  const params = {
+function extractPossibleIdsOrHandles(input) {
+  return String(input)
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+function guessChannelIdOrHandle(token) {
+  const m1 = token.match(/\/channel\/(UC[0-9A-Za-z_-]{20,})/i);
+  if (m1) return { type: "id", value: m1[1] };
+  const m2 = token.match(/@([A-Za-z0-9._-]+)/);
+  if (m2) return { type: "handle", value: m2[1] };
+  if (/^UC[0-9A-Za-z_-]{20,}$/.test(token))
+    return { type: "id", value: token };
+  return { type: "handle", value: token.replace(/^@/, "") };
+}
+async function resolveHandleToChannelId(handle) {
+  const res = await yt("search", {
     part: "snippet",
-    channelId: ch.id,
-    type: "video",
-    order: "date",
-    maxResults: "50"
-  };
-  if (pageToken) params.pageToken = pageToken;
+    q: `@${handle}`,
+    type: "channel",
+    maxResults: "1"
+  });
+  return res.items?.[0]?.id?.channelId || null;
+}
 
-  try {
-    const search = await yt("search", params);
-    const metas = (search.items || [])
-      .filter(it => it?.id?.videoId)
-      .map(it => mapSnippet({ ...it.snippet, videoId: it.id.videoId }));
-    const next = search.nextPageToken ? { skip: search.nextPageToken } : undefined;
-    return next ? { metas, next } : { metas };
-  } catch (e) {
-    console.error("❌ Catalog error", e);
-    return { metas: [] };
+/* ───────────────────────────────
+   CATALOG HANDLER
+──────────────────────────────── */
+builder.defineCatalogHandler(async ({ id, extra }) => {
+  const results = [];
+
+  /* Static categories */
+  const category = Object.keys(CATEGORIES).find(
+    (k) => `youtube-${k.toLowerCase()}` === id
+  );
+  if (category) {
+    for (const ch of CATEGORIES[category]) {
+      try {
+        const res = await yt("search", {
+          part: "snippet",
+          channelId: ch.id,
+          type: "video",
+          order: "date",
+          maxResults: "20"
+        });
+        results.push(
+          ...(res.items || [])
+            .filter((it) => it.id?.videoId)
+            .map((it) => mapSnippet({ ...it.snippet, videoId: it.id.videoId }))
+        );
+      } catch (err) {
+        console.warn("Catalog fetch failed", ch.id, err);
+      }
+    }
+    return { metas: results };
   }
+
+  /* Dynamic user catalog */
+  if (id === "youtube-user") {
+    const query = extra?.search;
+    if (!query) return { metas: [] };
+
+    const tokens = extractPossibleIdsOrHandles(query);
+    const channelIds = [];
+    for (const tok of tokens) {
+      const guess = guessChannelIdOrHandle(tok);
+      if (guess.type === "id") channelIds.push(guess.value);
+      else if (guess.type === "handle") {
+        try {
+          const cid = await resolveHandleToChannelId(guess.value);
+          if (cid) channelIds.push(cid);
+        } catch (e) {
+          console.warn("handle resolve failed:", guess.value);
+        }
+      }
+    }
+
+    const unique = [...new Set(channelIds)];
+    for (const cid of unique) {
+      try {
+        const res = await yt("search", {
+          part: "snippet",
+          channelId: cid,
+          type: "video",
+          order: "date",
+          maxResults: "20"
+        });
+        results.push(
+          ...(res.items || [])
+            .filter((it) => it.id?.videoId)
+            .map((it) => mapSnippet({ ...it.snippet, videoId: it.id.videoId }))
+        );
+      } catch (err) {
+        console.warn("User fetch failed", cid, err);
+      }
+    }
+    return { metas: results };
+  }
+
+  return { metas: [] };
 });
 
+/* ───────────────────────────────
+   META HANDLER
+──────────────────────────────── */
 builder.defineMetaHandler(async ({ id }) => {
-  const videoId = id.replace(/^yt:/,"");
+  const videoId = id.replace("yt:", "");
   try {
-    const data = await yt("videos", { part: "snippet,contentDetails,statistics", id: videoId });
-    const v = data.items?.[0]; if (!v) return { meta: null };
+    const res = await yt("videos", {
+      part: "snippet,contentDetails,statistics",
+      id: videoId
+    });
+    const v = res.items?.[0];
+    if (!v) return { meta: null };
 
-    const t = v.snippet?.thumbnails || {};
-    const poster = t.high?.url || t.medium?.url || t.default?.url || null;
-    const bg = t.maxres?.url || t.high?.url || t.medium?.url || poster;
-
-    const iso = v.contentDetails?.duration || "PT0S";
-    const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-    const h = parseInt(m?.[1]||0,10), mi = parseInt(m?.[2]||0,10), s = parseInt(m?.[3]||0,10);
-    const dur = h ? `${h}h ${mi}m` : (mi ? `${mi}m ${s}s` : `${s}s`);
-
-    const views = Number(v.statistics?.viewCount || 0).toLocaleString();
-
-    return { meta: {
+    const views = parseInt(v.statistics.viewCount || "0").toLocaleString();
+    const meta = {
       id: `yt:${videoId}`,
       type: "series",
-      name: v.snippet?.title || "YouTube Video",
-      poster,
-      background: bg,
-      description: `${v.snippet?.description || ""}\n\n👁 ${views} views • ⏱ ${dur}`,
-      releaseInfo: new Date(v.snippet?.publishedAt || Date.now()).getFullYear().toString(),
+      name: v.snippet.title,
+      poster:
+        v.snippet.thumbnails?.high?.url ||
+        v.snippet.thumbnails?.default?.url,
+      description: `${v.snippet.description}\n\n👁 ${views} views`,
+      releaseInfo: v.snippet.publishedAt?.slice(0, 10),
       posterShape: "landscape",
-      videos: [{ id: `yt:${videoId}:1:1`, title: v.snippet?.title || "Episode", released: new Date(v.snippet?.publishedAt || Date.now()).toISOString(), season: 1, episode: 1 }]
-    }};
-  } catch (e) {
-    console.error("❌ Meta error", e);
+      videos: [
+        {
+          id: `yt:${videoId}:1:1`,
+          title: v.snippet.title,
+          released: v.snippet.publishedAt
+        }
+      ]
+    };
+    return { meta };
+  } catch (err) {
+    console.error("Meta error", err);
     return { meta: null };
   }
 });
 
+/* ───────────────────────────────
+   STREAM HANDLER
+──────────────────────────────── */
 builder.defineStreamHandler(async ({ id }) => {
-  const videoId = String(id).split(":")[1] || String(id).replace(/^yt:/, 
-"");
+  const videoId = id.split(":")[1] || id;
   return {
     streams: [
       {
@@ -147,7 +248,9 @@ builder.defineStreamHandler(async ({ id }) => {
   };
 });
 
-
+/* ───────────────────────────────
+   START SERVER
+──────────────────────────────── */
 const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port });
-console.log(`✅ Addon running: http://127.0.0.1:${port}/manifest.json`);
+console.log(`✅ Add-on running on http://localhost:${port}/manifest.json`);
