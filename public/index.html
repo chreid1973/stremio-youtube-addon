@@ -67,12 +67,8 @@
   const genBtn = document.getElementById('generateBtn');
   const result = document.getElementById('result');
 
-  // NEW: add containers for extra buttons
-  const btnBar = document.createElement('div');
-  btnBar.style.marginTop = '1rem';
-  result.insertAdjacentElement('beforebegin', btnBar);
-
   const manifestUrl = 'https://stremio-youtube-addon.onrender.com/manifest.json';
+  const catalogId = 'youtube-user';
 
   let channels = JSON.parse(localStorage.getItem('ytUniverseChannels') || '[]');
 
@@ -104,74 +100,86 @@
     alert('Saved locally!');
   };
 
-  function buildExtras() {
+  function buildSearchExtras() {
     if (!channels.length) return '';
     const search = encodeURIComponent(channels.join(','));
-    return `search=${search}`;
+    return `extra=search=${search}`;
   }
 
-  function buildDesktopLink(extras) {
-    // stremio:// must use encoded addon param
-    let url = `stremio://addon-install?addon=${encodeURIComponent(manifestUrl)}`;
-    if (extras) url += `&${extras}`;
-    return url;
+  // --- Install links (NO extras here!) ---
+  function installDesktop() {
+    return `stremio://addon-install?addon=${encodeURIComponent(manifestUrl)}`;
+  }
+  function installWeb() {
+    return `https://web.strem.io/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
   }
 
-  function buildWebLink(extras) {
-    // Web Stremio accepts HTTPS link with #/addons route
-    let url = `https://web.strem.io/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
-    if (extras) url += `&${extras}`;
-    return url;
+  // --- Open catalog with extras (requires addon installed) ---
+  function openCatalogDesktop() {
+    const extras = buildSearchExtras();
+    if (!extras) return '';
+    return `stremio://discover/series/${catalogId}?addon=${encodeURIComponent(manifestUrl)}&${extras}`;
+  }
+  function openCatalogWeb() {
+    const extras = buildSearchExtras();
+    if (!extras) return '';
+    return `https://web.strem.io/#/discover/series/${catalogId}?addon=${encodeURIComponent(manifestUrl)}&${extras}`;
   }
 
-  // Helper to create action buttons
-  function makeBtn(txt, href) {
+  function makeBtn(txt, href, isSecondary=false) {
     const a = document.createElement('a');
     a.textContent = txt;
-    a.href = href;
+    a.href = href || '#';
     a.style.marginRight = '0.5rem';
     a.style.display = 'inline-block';
     a.style.padding = '0.5rem 1rem';
     a.style.borderRadius = '4px';
     a.style.textDecoration = 'none';
-    a.style.background = txt.includes('Web') ? '#333' : '#ff0000';
+    a.style.background = isSecondary ? '#333' : '#ff0000';
     a.style.color = '#fff';
+    a.target = '_blank';
     return a;
   }
 
+  // Always render base install buttons
+  (function renderBaseButtons() {
+    const wrap = document.createElement('div');
+    wrap.style.marginTop = '1rem';
+    wrap.appendChild(makeBtn('Install add-on (Desktop)', installDesktop()));
+    wrap.appendChild(makeBtn('Install add-on (Web)', installWeb(), true));
+    document.body.appendChild(wrap);
+  })();
+
+  // Generate “open favorites” deep links
   genBtn.onclick = () => {
-    const extras = buildExtras();
-    if (!extras) {
-      alert('Add at least one channel first (or use the “Install base add-on” buttons below).');
+    const desk = openCatalogDesktop();
+    const web = openCatalogWeb();
+
+    if (!desk || !web) {
+      alert('Add at least one channel first.');
       return;
     }
 
-    const desktopLink = buildDesktopLink(extras);
-    const webLink = buildWebLink(extras);
+    // Button row
+    const row = document.createElement('div');
+    row.style.marginTop = '1rem';
+    row.appendChild(makeBtn('Open favorites (Desktop)', desk));
+    row.appendChild(makeBtn('Open favorites (Web)', web, true));
 
-    // Show both install buttons
-    btnBar.innerHTML = '';
-    btnBar.appendChild(makeBtn('Install in Stremio (Desktop)', desktopLink));
-    btnBar.appendChild(makeBtn('Install in Stremio Web', webLink));
-
-    // Also show the raw desktop deep-link for copy
-    result.textContent = desktopLink;
+    // Show raw desktop link for copy
+    result.textContent = desk;
     result.style.display = 'block';
-  };
 
-  // Always show “Install base add-on” (no favorites) buttons
-  (function renderBaseInstallButtons() {
-    const baseBar = document.createElement('div');
-    baseBar.style.marginTop = '1rem';
-    const baseDesktop = makeBtn('Install base add-on (Desktop)', buildDesktopLink(''));
-    const baseWeb = makeBtn('Install base add-on (Web)', buildWebLink(''));
-    baseBar.appendChild(baseDesktop);
-    baseBar.appendChild(baseWeb);
-    document.body.appendChild(baseBar);
-  })();
+    // Insert or replace previous row
+    const existing = document.getElementById('openRow');
+    if (existing) existing.remove();
+    row.id = 'openRow';
+    result.insertAdjacentElement('beforebegin', row);
+  };
 
   renderList();
 </script>
+
 
 </body>
 </html>
