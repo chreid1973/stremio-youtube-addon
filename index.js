@@ -6,7 +6,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import fetch from "node-fetch";
-import pkg from "stremio-addon-sdk";
+
 
 const { addonBuilder } = pkg;
 
