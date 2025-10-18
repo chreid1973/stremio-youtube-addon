@@ -291,7 +291,32 @@ builder.defineStreamHandler(async ({ id }) => {
   return { streams: [{ title: "🎬 Open on YouTube", externalUrl: `https://www.youtube.com/watch?v=${videoId}` }] };
 });
 
-// ── Serve ───────────────────────────────────────────────
+// ── Serve (universal, no express/serveHTTP needed) ─────
+import http from "http";
+
 const port = process.env.PORT || 7000;
-serveHTTP(builder.getInterface(), { port });
-console.log(`✅ Add-on running: http://localhost:${port}/manifest.json`);
+const iface = builder.getInterface();
+
+const server = http.createServer((req, res) => {
+  try {
+    if (typeof iface === "function") {
+      // Older SDK: interface is a function
+      return iface(req, res);
+    }
+    if (iface && typeof iface.serve === "function") {
+      // Newer SDK: interface has .serve()
+      return iface.serve(req, res);
+    }
+    res.statusCode = 500;
+    res.end("Invalid Stremio interface");
+  } catch (e) {
+    console.error("Stremio interface error:", e);
+    res.statusCode = 500;
+    res.end("Internal Server Error");
+  }
+});
+
+server.listen(port, () => {
+  console.log(`✅ Add-on running: http://localhost:${port}/manifest.json`);
+});
+
