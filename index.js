@@ -294,5 +294,5 @@ const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port });
 console.log(`✅ Add-on running: http://localhost:${port}/manifest.json`);
 
-});
+);
 
