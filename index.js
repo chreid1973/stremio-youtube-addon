@@ -285,26 +285,14 @@ builder.defineStreamHandler(async ({ id }) => {
   };
 });
 
-// ── Express + Add-on Serve (single block) ──────────────
-const app = express();
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Serve the static web UI (public/index.html)
-app.use(express.static(path.join(__dirname, "public")));
+// --- Serve ONLY the Stremio add-on (stable) ---
+import pkg from "stremio-addon-sdk";
+const { serveHTTP } = pkg;
 
-// Hand off all addon routes to the Stremio interface
-const iface = builder.getInterface();
-app.use((req, res) => {
-  // Let the SDK handle /manifest.json, /catalog, /meta, /stream, etc.
-  if (typeof iface === "function") return iface(req, res);
-  if (iface && typeof iface.serve === "function") return iface.serve(req, res);
-  res.statusCode = 500;
-  res.end("Invalid Stremio interface");
-});
-
-// Start server
 const port = process.env.PORT || 7000;
-app.listen(port, () => {
-  console.log(`✅ Web + Add-on running on port ${port}`);
+serveHTTP(builder.getInterface(), { port });
+console.log(`✅ Add-on running: http://localhost:${port}/manifest.json`);
+
 });
 
