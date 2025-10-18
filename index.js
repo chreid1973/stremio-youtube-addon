@@ -157,27 +157,58 @@ async function resolveHandleToChannelId(handle) {
 }
 
 // ── Catalog handler ─────────────────────────────────────
-builder.defineCatalogHandler(async ({ id, extra }) => {
-  // Per-channel catalogs: id looks like "youtube-<cat>-<UCid>"
-  if (id.startsWith("youtube-") && id !== "youtube-user") {
-    const parts = id.split("-");
-    const channelId = parts[2]; // youtube-<cat>-<UC...>
-    if (!channelId) return { metas: [] };
-    try {
-      const res = await yt("search", {
-        part: "snippet",
-        channelId,
-        type: "video",
-        order: "date",
-        maxResults: "50"
-      });
-      const metas = (res.items || [])
-        .filter(it => it?.id?.videoId)
-        .map(it => mapSnippet({ ...it.snippet, videoId: it.id.videoId }));
-      return { metas };
-    } catch (e) {
-      console.error("Catalog channel fetch failed", channelId, e);
+// 📺 CATALOG HANDLER — use guaranteed YouTube uploads playlists
+builder.defineCatalogHandler(async ({ type, id, extra }) => {
+  const channel = CHANNELS.find(c => `youtube-${c.id}` === id);
+  if (!channel) return { metas: [] };
+
+  try {
+    // Step 1 – get channel’s “uploads” playlist id
+    const ch = await yt("channels", {
+      part: "contentDetails",
+      id: channel.id,
+    });
+    const uploadsId = ch.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploadsId) {
+      console.warn("No uploads playlist for", channel.name);
       return { metas: [] };
+    }
+
+    // Step 2 – fetch videos from that playlist
+    const pl = await yt("playlistItems", {
+      part: "snippet",
+      playlistId: uploadsId,
+      maxResults: "50",
+    });
+
+    // Step 3 – map results to Stremio metas
+    const metas = (pl.items || []).map((item) => {
+      const s = item.snippet;
+      return {
+        id: `yt:${s.resourceId.videoId}`,
+        type: "series",
+        name: s.title,
+        poster:
+          s.thumbnails?.high?.url ||
+          s.thumbnails?.medium?.url ||
+          s.thumbnails?.default?.url,
+        background:
+          s.thumbnails?.maxres?.url ||
+          s.thumbnails?.high?.url ||
+          s.thumbnails?.medium?.url,
+        description: s.description?.substring(0, 400) || "",
+        releaseInfo: new Date(s.publishedAt).getFullYear().toString(),
+        posterShape: "landscape",
+      };
+    });
+
+    return { metas };
+  } catch (err) {
+    console.error("Uploads fetch failed", channel.name, err);
+    return { metas: [] };
+  }
+});
+
     }
   }
 
