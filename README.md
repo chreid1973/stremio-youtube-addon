@@ -1,5 +1,5 @@
 <p align="center">
- <img width="512" height="512" alt="image" src="https://github.com/user-attachments/assets/64f2e4e7-81da-4483-88ad-95728c7de5e2" />
+ <img width="256" height="256" alt="image" src="https://github.com/user-attachments/assets/64f2e4e7-81da-4483-88ad-95728c7de5e2" />
 </p>
 
 <h1 align="center">🎬 YouTube Universe</h1>
