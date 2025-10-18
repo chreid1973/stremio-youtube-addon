@@ -33,31 +33,29 @@ const CHANNEL_GROUPS = {
 };
 
 // ── Manifest ───────────────────────────────────────────────────
+// ── Manifest ───────────────────────────────────────────────────
 const manifest = {
   id: "community.youtube.universe",
   version: "3.2.1",
   name: "YouTube Universe",
-  description: `
-Per-channel YouTube catalogs by category, plus easy favorites.
-
-Add your favorites:
-1) Open: "Your YouTube Favorites"
-2) Use the Search box at the top
-3) Paste comma-separated channels (handles/URLs/UC IDs), e.g.
-   @mkbhd, @LinusTechTips, https://www.youtube.com/@throttlehouse
-4) Press Enter
-
-Leave Search empty to use the saved JSONBin list.
-Streams open directly on YouTube.
-`.trim(),
-  // ...rest of your manifest...
-};
-
+  description: [
+    "Per-channel YouTube catalogs by category, plus easy favorites.",
+    "",
+    "Add your favorites:",
+    "1) Open: \"Your YouTube Favorites\"",
+    "2) Use the Search box at the top",
+    "3) Paste comma-separated channels (handles/URLs/UC IDs), e.g.",
+    "   @mkbhd, @LinusTechTips, https://www.youtube.com/@throttlehouse",
+    "4) Press Enter",
+    "",
+    "Leave Search empty to use the saved JSONBin list.",
+    "Streams open directly on YouTube."
+  ].join("\n"),
   resources: ["catalog", "meta", "stream"],
   types: ["series"],
   idPrefixes: ["yt"],
   catalogs: [
-    // One catalog per CHANNEL (keeps pages clean), grouped in the name
+    // one catalog per CHANNEL (keeps pages clean), grouped in the name
     ...Object.entries(CHANNEL_GROUPS).flatMap(([group, chans]) =>
       chans.map(ch => ({
         type: "series",
@@ -65,7 +63,7 @@ Streams open directly on YouTube.
         name: `YouTube Universe: ${group} – ${ch.name}`
       }))
     ),
-    // Favorites: use Stremio's built-in 'search' extra (appears as the big search box)
+    // Favorites: use built-in 'search' box
     {
       type: "series",
       id: "youtube-user",
@@ -74,6 +72,7 @@ Streams open directly on YouTube.
     }
   ]
 };
+
 
 const builder = new addonBuilder(manifest);
 
