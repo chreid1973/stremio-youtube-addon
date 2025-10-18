@@ -2,23 +2,21 @@
 //  YouTube Universe — Per-Channel Catalogs + Easy Favorites (search box)
 // ────────────────────────────────────────────────────────────────
 
+import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-
-const app = express();
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-app.use(express.static(path.join(__dirname, "public")));
 import fetch from "node-fetch";
 import pkg from "stremio-addon-sdk";
-const { addonBuilder, serveHTTP } = pkg;
 
-
-
+const { addonBuilder } = pkg;
 
 // ── Environment Vars (Render → Environment) ─────────────────────
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 const JSONBIN_ID = process.env.JSONBIN_ID;       // optional, for fallback
 const JSONBIN_KEY = process.env.JSONBIN_KEY;     // optional
+
+// Pull this many uploads per channel (YouTube caps at 50)
+const VIDEOS_PER_CHANNEL = Math.min(Number(process.env.VIDEOS_PER_CHANNEL) || 20, 50);
 
 // ── Channel Groups (curated) ───────────────────────────────────
 const CHANNEL_GROUPS = {
@@ -32,8 +30,8 @@ const CHANNEL_GROUPS = {
     { id: "UCWqW23Ko6dbscptZYyQE-8A", name: "ZIP TIE TUNING" }
   ],
   Podcasts: [
-    { id: "UCEcrRXW3oEYfUctetZTAWLw", name: "WVFRM Podcast" },
-    { id: "UCi7GJNg51C3jgmYTUwqoUXA", name: "Team COCO" }
+    { id: "UCFP1dDbFt0B7X6M2xPDj1bA", name: "WVFRM Podcast" },
+    { id: "UCEcrRXW3oEYfUctetZTAWLw", name: "Team COCO" }
   ],
   Entertainment: [
     { id: "UCa6vGFO9ty8v5KZJXQxdhaw", name: "Jimmy Kimmel LIVE" },
@@ -42,10 +40,9 @@ const CHANNEL_GROUPS = {
 };
 
 // ── Manifest ───────────────────────────────────────────────────
-// ── Manifest ───────────────────────────────────────────────────
 const manifest = {
   id: "community.youtube.universe",
-  version: "3.2.1",
+  version: "3.2.2",
   name: "YouTube Universe",
   description: [
     "Per-channel YouTube catalogs by category, plus easy favorites.",
@@ -82,17 +79,9 @@ const manifest = {
   ]
 };
 
-
 const builder = new addonBuilder(manifest);
 
 // ── Helpers ────────────────────────────────────────────
-// Pull this many uploads per channel (YouTube caps at 50)
-const VIDEOS_PER_CHANNEL = Math.min(
-  Number(process.env.VIDEOS_PER_CHANNEL) || 20,
-  50
-);
-
-
 async function yt(endpoint, params = {}) {
   if (!YOUTUBE_API_KEY) throw new Error("Missing YOUTUBE_API_KEY");
   const url = new URL(`https://www.googleapis.com/youtube/v3/${endpoint}`);
@@ -263,7 +252,6 @@ builder.defineCatalogHandler(async ({ id, extra }) => {
   return { metas };
 });
 
-
 // ── Meta Handler ───────────────────────────────────────
 builder.defineMetaHandler(async ({ id }) => {
   const vid = id.replace("yt:", "");
@@ -293,32 +281,30 @@ builder.defineMetaHandler(async ({ id }) => {
 builder.defineStreamHandler(async ({ id }) => {
   const vid = id.split(":")[1];
   return {
-    streams: [{ title: "🎬 Open on YouTube", externalUrl: `https://www.youtube.com/watch?v=${vid}` }]
+    streams: [{ title: "Open on YouTube", externalUrl: `https://www.youtube.com/watch?v=${vid}` }]
   };
 });
 
-// ── Express + Add-on Serve ───────────────────────────────
-import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
-import pkg from "stremio-addon-sdk";
-const { addonBuilder } = pkg;
-
+// ── Express + Add-on Serve (single block) ──────────────
 const app = express();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Serve the static web UI
+// Serve the static web UI (public/index.html)
 app.use(express.static(path.join(__dirname, "public")));
 
-// Serve Stremio add-on interface
-const addonInterface = builder.getInterface();
-app.get("/manifest.json", (_, res) => res.json(addonInterface.manifest));
-app.get("/catalog/:type/:id.json", addonInterface.get);
-app.get("/meta/:type/:id.json", addonInterface.get);
-app.get("/stream/:type/:id.json", addonInterface.get);
+// Hand off all addon routes to the Stremio interface
+const iface = builder.getInterface();
+app.use((req, res) => {
+  // Let the SDK handle /manifest.json, /catalog, /meta, /stream, etc.
+  if (typeof iface === "function") return iface(req, res);
+  if (iface && typeof iface.serve === "function") return iface.serve(req, res);
+  res.statusCode = 500;
+  res.end("Invalid Stremio interface");
+});
 
 // Start server
 const port = process.env.PORT || 7000;
 app.listen(port, () => {
   console.log(`✅ Web + Add-on running on port ${port}`);
 });
+
