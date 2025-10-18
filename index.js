@@ -19,14 +19,16 @@ const CHANNEL_GROUPS = {
   Tech: [
     { id: "UCXuqSBlHAE6Xw-yeJA0Tunw", name: "Linus Tech Tips" },
     { id: "UCdBK94H6oZT2Q7l0-b0xmMg", name: "Short Circuit - LTT" },
+    { id: "UCJa14zeVf8p6clixTOIOVyQ", name: "Jakkuh-Jake from LTT" },
     { id: "UCBJycsmduvYEL83R_U4JriQ", name: "MKBHD" }
   ],
   Automotive: [
+    { id: "UCWqW23Ko6dbscptZYyQE-8A", name: "Zip Tie Tuning" },
     { id: "UCyXiDU5qjfOPxgOPeFWGwKw", name: "Throttle House" }
   ],
   Podcasts: [
-    { id: "UCFP1dDbFt0B7X6M2xPDj1bA", name: "WVFRM Podcast" },
-    { id: "UCEcrRXW3oEYfUctetZTAWLw", name: "Team COCO" }
+    { id: "UCEcrRXW3oEYfUctetZTAWLw", name: "WVFRM Podcast" },
+    { id: "UCi7GJNg51C3jgmYTUwqoUXA", name: "Team COCO" }
   ],
   Entertainment: [
     { id: "UCa6vGFO9ty8v5KZJXQxdhaw", name: "Jimmy Kimmel LIVE" },
