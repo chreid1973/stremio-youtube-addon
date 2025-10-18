@@ -37,7 +37,15 @@ const manifest = {
   id: "community.youtube.universe",
   version: "3.2.0",
   name: "YouTube Universe",
-  description: "Per-channel catalogs by category + user favorites via the search box",
+  description: description:
+  "Per-channel YouTube catalogs by category + easy favorites.\n\n" +
+  "✨ Add your own favorites:\n" +
+  "1) Open the catalog: “Your YouTube Favorites”.\n" +
+  "2) Use the big Search box at the top.\n" +
+  "3) Paste comma-separated channels (handles/URLs/UC IDs), e.g.\n" +
+  "   @mkbhd, @LinusTechTips, https://www.youtube.com/@throttlehouse\n" +
+  "4) Press Enter. Leave Search empty to use the saved JSONBin list.\n\n" +
+  "Streams open directly on YouTube.",
   logo: "https://www.youtube.com/s/desktop/d743f786/img/favicon_144x144.png",
   resources: ["catalog", "meta", "stream"],
   types: ["series"],
