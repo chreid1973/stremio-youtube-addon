@@ -61,3 +61,14 @@ export YOUTUBE_API_KEY=your_youtube_api_key
 export JSONBIN_BIN_ID=your_bin_id
 export JSONBIN_MASTER_KEY=your_bin_master_key
 node index.js
+
+## ☕ Credits
+
+Built by **THE GEEK** — blending tech, entertainment, and open-source creativity.  
+Pull requests, forks, and new channel ideas are welcome!
+
+---
+
+### License
+
+MIT © 2025 THE GEEK @ 3 Hole Punch Media
