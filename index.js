@@ -53,7 +53,6 @@ Streams open directly on YouTube.
   // ...rest of your manifest...
 };
 
-  logo: <img width="256" height="256" alt="image" src="https://github.com/user-attachments/assets/64f2e4e7-81da-4483-88ad-95728c7de5e2" />,
   resources: ["catalog", "meta", "stream"],
   types: ["series"],
   idPrefixes: ["yt"],
