@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://www.youtube.com/s/desktop/d743f786/img/favicon_144x144.png" width="80" height="80" alt="YouTube logo" />
+ <img width="512" height="512" alt="image" src="https://github.com/user-attachments/assets/64f2e4e7-81da-4483-88ad-95728c7de5e2" />
 </p>
 
 <h1 align="center">🎬 YouTube Universe</h1>
