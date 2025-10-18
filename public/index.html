@@ -61,55 +61,117 @@
   <div id="result" class="link-box" style="display:none;"></div>
 
   <script>
-    const input = document.getElementById('channelInput');
-    const listDiv = document.getElementById('channelList');
-    const saveBtn = document.getElementById('saveBtn');
-    const genBtn = document.getElementById('generateBtn');
-    const result = document.getElementById('result');
+  const input = document.getElementById('channelInput');
+  const listDiv = document.getElementById('channelList');
+  const saveBtn = document.getElementById('saveBtn');
+  const genBtn = document.getElementById('generateBtn');
+  const result = document.getElementById('result');
 
-    let channels = JSON.parse(localStorage.getItem('ytUniverseChannels') || '[]');
+  // NEW: add containers for extra buttons
+  const btnBar = document.createElement('div');
+  btnBar.style.marginTop = '1rem';
+  result.insertAdjacentElement('beforebegin', btnBar);
 
-    function renderList() {
-      listDiv.innerHTML = '';
-      channels.forEach((ch, i) => {
-        const div = document.createElement('div');
-        div.className = 'channel';
-        div.innerHTML = `<span>${ch}</span> <button class="secondary" onclick="removeChannel(${i})">✖</button>`;
-        listDiv.appendChild(div);
-      });
-    }
+  const manifestUrl = 'https://stremio-youtube-addon.onrender.com/manifest.json';
 
-    function removeChannel(i) {
-      channels.splice(i, 1);
-      renderList();
-    }
+  let channels = JSON.parse(localStorage.getItem('ytUniverseChannels') || '[]');
 
-    document.getElementById('addBtn').onclick = () => {
-      const val = input.value.trim();
-      if (!val) return;
-      if (!channels.includes(val)) channels.push(val);
-      input.value = '';
-      renderList();
-    };
+  function renderList() {
+    listDiv.innerHTML = '';
+    channels.forEach((ch, i) => {
+      const div = document.createElement('div');
+      div.className = 'channel';
+      div.innerHTML = `<span>${ch}</span> <button class="secondary" onclick="removeChannel(${i})">✖</button>`;
+      listDiv.appendChild(div);
+    });
+  }
 
-    saveBtn.onclick = () => {
-      localStorage.setItem('ytUniverseChannels', JSON.stringify(channels));
-      alert('Saved locally!');
-    };
-
-    genBtn.onclick = () => {
-      if (!channels.length) {
-        alert('Add at least one channel first!');
-        return;
-      }
-      const query = encodeURIComponent(channels.join(','));
-      const addonUrl = 'https://stremio-youtube-addon.onrender.com/manifest.json';
-      const stremioLink = `stremio://addon-install?addon=${addonUrl}&extra=search=${query}`;
-      result.textContent = stremioLink;
-      result.style.display = 'block';
-    };
-
+  window.removeChannel = function(i) {
+    channels.splice(i, 1);
     renderList();
-  </script>
+  };
+
+  document.getElementById('addBtn').onclick = () => {
+    const val = input.value.trim();
+    if (!val) return;
+    if (!channels.includes(val)) channels.push(val);
+    input.value = '';
+    renderList();
+  };
+
+  saveBtn.onclick = () => {
+    localStorage.setItem('ytUniverseChannels', JSON.stringify(channels));
+    alert('Saved locally!');
+  };
+
+  function buildExtras() {
+    if (!channels.length) return '';
+    const search = encodeURIComponent(channels.join(','));
+    return `search=${search}`;
+  }
+
+  function buildDesktopLink(extras) {
+    // stremio:// must use encoded addon param
+    let url = `stremio://addon-install?addon=${encodeURIComponent(manifestUrl)}`;
+    if (extras) url += `&${extras}`;
+    return url;
+  }
+
+  function buildWebLink(extras) {
+    // Web Stremio accepts HTTPS link with #/addons route
+    let url = `https://web.strem.io/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
+    if (extras) url += `&${extras}`;
+    return url;
+  }
+
+  // Helper to create action buttons
+  function makeBtn(txt, href) {
+    const a = document.createElement('a');
+    a.textContent = txt;
+    a.href = href;
+    a.style.marginRight = '0.5rem';
+    a.style.display = 'inline-block';
+    a.style.padding = '0.5rem 1rem';
+    a.style.borderRadius = '4px';
+    a.style.textDecoration = 'none';
+    a.style.background = txt.includes('Web') ? '#333' : '#ff0000';
+    a.style.color = '#fff';
+    return a;
+  }
+
+  genBtn.onclick = () => {
+    const extras = buildExtras();
+    if (!extras) {
+      alert('Add at least one channel first (or use the “Install base add-on” buttons below).');
+      return;
+    }
+
+    const desktopLink = buildDesktopLink(extras);
+    const webLink = buildWebLink(extras);
+
+    // Show both install buttons
+    btnBar.innerHTML = '';
+    btnBar.appendChild(makeBtn('Install in Stremio (Desktop)', desktopLink));
+    btnBar.appendChild(makeBtn('Install in Stremio Web', webLink));
+
+    // Also show the raw desktop deep-link for copy
+    result.textContent = desktopLink;
+    result.style.display = 'block';
+  };
+
+  // Always show “Install base add-on” (no favorites) buttons
+  (function renderBaseInstallButtons() {
+    const baseBar = document.createElement('div');
+    baseBar.style.marginTop = '1rem';
+    const baseDesktop = makeBtn('Install base add-on (Desktop)', buildDesktopLink(''));
+    const baseWeb = makeBtn('Install base add-on (Web)', buildWebLink(''));
+    baseBar.appendChild(baseDesktop);
+    baseBar.appendChild(baseWeb);
+    document.body.appendChild(baseBar);
+  })();
+
+  renderList();
+</script>
+
 </body>
 </html>
