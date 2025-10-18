@@ -2,13 +2,13 @@
 //  YouTube Universe — Per-Channel Catalogs + Easy Favorites (search box)
 // ────────────────────────────────────────────────────────────────
 
-
+import pkg from "stremio-addon-sdk";
 import path from "path";
 import { fileURLToPath } from "url";
 import fetch from "node-fetch";
 
+const { addonBuilder, serveHTTP } = pkg;
 
-const { addonBuilder } = pkg;
 
 // ── Environment Vars (Render → Environment) ─────────────────────
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
@@ -287,8 +287,7 @@ builder.defineStreamHandler(async ({ id }) => {
 
 
 // --- Serve ONLY the Stremio add-on (stable) ---
-import pkg from "stremio-addon-sdk";
-const { serveHTTP } = pkg;
+
 
 const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port });
