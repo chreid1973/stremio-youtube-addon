@@ -1,14 +1,16 @@
-# 🎬 YouTube Universe — A Community Add-on for Stremio
+# 🎬 YouTube Universe — A Curated + Personalized Add-on for Stremio
 
-**YouTube Universe** lets you watch curated YouTube channels and add your own favorites directly inside Stremio.  
-It’s a simple, open-source way to bring your favorite creators into one streaming hub.
+Bring the best of YouTube straight into Stremio — beautifully organized by category, plus a fully personal “Your Favorites” feed that remembers you.
 
 ---
 
 ## 🌐 Live Add-on Manifest
 
-**Install link (for Stremio):**
 https://stremio-youtube-addon.onrender.com
+
+Paste that into **Stremio → Add-ons → Community → Install via URL**.
+
+---
 
 ## 📺 Categories Included
 
@@ -17,41 +19,45 @@ https://stremio-youtube-addon.onrender.com
 | **Tech** | Linus Tech Tips, Short Circuit (LTT), MKBHD |
 | **Automotive** | Throttle House |
 | **Podcasts** | WVFRM Podcast, Team COCO |
-| **Entertainment** | Jimmy Kimmel LIVE, Corridor Crew |
+| **Entertainment** | Jimmy Kimmel LIVE, Corridor Crew MAIN |
 
-Each catalog automatically updates with the latest videos from those creators.
+Each channel appears as its own catalog — no more mixed feeds — and updates automatically when creators upload new videos.
 
 ---
 
-## 💫 Add Your Own Favorites
+## 💫 Your YouTube Favorites — Saved & Personal
 
-Look for the **“Your YouTube Favorites”** catalog in Stremio.
+Add, load, and manage your own favorite channels directly from Stremio.
 
-There you can:
-- Paste one or more YouTube channel URLs  
-  (e.g. `https://www.youtube.com/@veritasium`)
-- Or type multiple handles separated by commas  
-  (e.g. `@veritasium, @CGPGrey, @Kurzgesagt`)
-
-The add-on will fetch your custom feed live from YouTube — no account needed.
+1. Open **Your YouTube Favorites** in the add-on list.  
+2. Tap the filter icon (top-right).  
+3. Use these fields:
+   - **uid:** your personal ID (e.g. `alex01`)  
+   - **action:** `save`, `load`, `add`, `remove`, or `clear`  
+   - **search:** YouTube handles or URLs, separated by commas  
+     ```
+     @veritasium, https://www.youtube.com/@Kurzgesagt
+     ```
+4. Click “Search” — your list is saved instantly and reloads next time with the same `uid`.
 
 ---
 
 ## 🧠 How It Works
 
-- Built with [stremio-addon-sdk](https://github.com/Stremio/stremio-addon-sdk)
-- Powered by the **YouTube Data API v3**
+- Built with [stremio-addon-sdk](https://github.com/Stremio/stremio-addon-sdk)  
+- Powered by the **YouTube Data API v3**  
+- Favorites persist securely via **[JSONBin.io](https://jsonbin.io)**  
 - Hosted on [Render](https://render.com)
-- Source code available on [GitHub](https://github.com/chreid1973/stremio-youtube-addon)
 
 ---
 
-## 🛠️ For Developers
+## 🛠️ Local Development
 
-Clone and run locally:
 ```bash
 git clone https://github.com/chreid1973/stremio-youtube-addon.git
 cd stremio-youtube-addon
 npm install
-export YOUTUBE_API_KEY=your_api_key_here
+export YOUTUBE_API_KEY=your_youtube_api_key
+export JSONBIN_BIN_ID=your_bin_id
+export JSONBIN_MASTER_KEY=your_bin_master_key
 node index.js
