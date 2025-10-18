@@ -60,140 +60,137 @@
 
   <div id="result" class="link-box" style="display:none;"></div>
 
-  <script>
-  // DOM
-  const input = document.getElementById('channelInput');
+ <script>
+  // --- UI elements
+  const input   = document.getElementById('channelInput');
   const listDiv = document.getElementById('channelList');
   const saveBtn = document.getElementById('saveBtn');
-  const genBtn = document.getElementById('generateBtn');
-  const result = document.getElementById('result');
+  const genBtn  = document.getElementById('generateBtn');
+  const result  = document.getElementById('result');
 
-  // NEW: extra buttons (share / export / import)
-  const toolsBar = document.createElement('div');
-  toolsBar.style.marginTop = '0.75rem';
-  const shareBtn = document.createElement('button');
-  shareBtn.textContent = '🔗 Copy sharable link';
-  const exportBtn = document.createElement('button');
-  exportBtn.textContent = '⬇️ Export JSON';
-  exportBtn.className = 'secondary';
-  const importInput = document.createElement('input');
-  importInput.type = 'file';
-  importInput.accept = 'application/json';
-  importInput.style.marginLeft = '0.5rem';
-  toolsBar.appendChild(shareBtn);
-  toolsBar.appendChild(exportBtn);
-  toolsBar.appendChild(importInput);
-  result.insertAdjacentElement('beforebegin', toolsBar);
-
-  // Add-on manifest and catalog info
+  // --- Config: your add-on manifest URL
   const manifestUrl = 'https://stremio-youtube-addon.onrender.com/manifest.json';
-  const catalogId = 'youtube-user';
+  const catalogId   = 'youtube-user';
 
-  // State
+  // --- State
   let channels = [];
 
-  // --- URL encoding helpers (base64url) ---
+  // --- helpers: base64url encode/decode (for sharable links ?c=...)
   const encB64 = (s) =>
-    btoa(unescape(encodeURIComponent(s)))
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   const decB64 = (s) => {
-    s = s.replace(/-/g, '+').replace(/_/g, '/');
-    const pad = s.length % 4 ? '='.repeat(4 - (s.length % 4)) : '';
+    s = s.replace(/-/g,'+').replace(/_/g,'/');
+    const pad = s.length % 4 ? '='.repeat(4 - s.length % 4) : '';
     return decodeURIComponent(escape(atob(s + pad)));
   };
 
-  function encodeList(list) {
-    return encB64(JSON.stringify(list));
-  }
-  function decodeList(code) {
-    try {
-      const arr = JSON.parse(decB64(code));
-      return Array.isArray(arr) ? arr : [];
-    } catch { return []; }
-  }
+  // Normalize any input into @handles or UC IDs only
+  function normalizeTokens(raw) {
+    const text = String(raw || '');
+    const out  = [];
 
-  // Load from localStorage or URL (?c=...)
-  function loadInitial() {
-    const url = new URL(location.href);
-    const c = url.searchParams.get('c');
-    if (c) {
-      channels = dedupe(decodeList(c)).filter(Boolean);
-      localStorage.setItem('ytUniverseChannels', JSON.stringify(channels));
-    } else {
-      channels = JSON.parse(localStorage.getItem('ytUniverseChannels') || '[]');
-    }
-  }
+    // split on commas/spaces/newlines
+    text.split(/[\s,]+/).forEach(token => {
+      token = token.trim();
+      if (!token) return;
 
-  // UI helpers
-  function dedupe(arr) {
+      // UC id as-is
+      if (/^UC[0-9A-Za-z_-]{20,}$/.test(token)) return out.push(token);
+
+      // @handle as-is
+      if (token.startsWith('@')) return out.push(token);
+
+      // URLs: try to extract UC or @handle
+      if (token.includes('youtube.com/')) {
+        const mUC = token.match(/channel\/(UC[0-9A-Za-z_-]{20,})/i);
+        if (mUC) return out.push(mUC[1]);
+        const mAt = token.match(/@([A-Za-z0-9._-]+)/);
+        if (mAt) return out.push('@' + mAt[1]);
+      }
+    });
+
+    // dedupe (case-insensitive)
     const seen = new Set();
-    return arr.filter(x => {
-      const key = String(x).trim().toLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
+    return out.filter(x => {
+      const k = x.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
       return true;
     });
   }
+
+  // Build the text that goes into &search= (comma-separated)
+  function buildSearchText(list) {
+    return list.join(',');
+  }
+
+  // Install links (NO extras)
+  function installDesktopLink() {
+    return `stremio://addon-install?addon=${encodeURIComponent(manifestUrl)}`;
+  }
+  function installWebLink() {
+    return `https://web.strem.io/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
+  }
+
+  // Open favorites (requires add-on installed)
+  function openDesktopLink(searchText) {
+    return `stremio://discover/series/${catalogId}?addon=${encodeURIComponent(manifestUrl)}&search=${encodeURIComponent(searchText)}`;
+  }
+  function openWebLink(searchText) {
+    return `https://web.strem.io/#/discover/series/${catalogId}?addon=${encodeURIComponent(manifestUrl)}&search=${encodeURIComponent(searchText)}`;
+  }
+
+  // Render list
   function renderList() {
     listDiv.innerHTML = '';
     channels.forEach((ch, i) => {
-      const div = document.createElement('div');
-      div.className = 'channel';
-      div.innerHTML = `<span>${ch}</span> <button class="secondary" onclick="removeChannel(${i})">✖</button>`;
-      listDiv.appendChild(div);
+      const row = document.createElement('div');
+      row.className = 'channel';
+      row.innerHTML = `<span>${ch}</span> <button class="secondary" onclick="removeChannel(${i})">✖</button>`;
+      listDiv.appendChild(row);
     });
   }
-  window.removeChannel = function(i) {
-    channels.splice(i, 1);
-    renderList();
-  };
+  window.removeChannel = (i) => { channels.splice(i,1); renderList(); };
 
-  // Actions
+  // Add button
   document.getElementById('addBtn').onclick = () => {
-    const val = input.value.trim();
-    if (!val) return;
-    channels.push(val);
-    channels = dedupe(channels);
+    const vals = normalizeTokens(input.value);
+    if (!vals.length) return;
+    channels = dedupe([...channels, ...vals]);
     input.value = '';
     renderList();
   };
 
+  // Deduper
+  function dedupe(arr) {
+    const seen = new Set();
+    return arr.filter(x => {
+      const k = x.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }
+
+  // Save locally
   saveBtn.onclick = () => {
     localStorage.setItem('ytUniverseChannels', JSON.stringify(channels));
     alert('Saved locally to this browser ✅');
   };
 
-  // Build search string for Stremio
-  function searchQuery() {
-    if (!channels.length) return '';
-    return encodeURIComponent(channels.join(','));
-  }
+  // Generate Open links
+  genBtn.onclick = () => {
+    if (!channels.length) { alert('Add at least one channel or handle.'); return; }
+    const searchText = buildSearchText(channels);
 
-  // Install links (no extras!)
-  function installDesktop() {
-    return `stremio://addon-install?addon=${encodeURIComponent(manifestUrl)}`;
-  }
-  function installWeb() {
-    return `https://web.strem.io/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
-  }
+    const row = document.getElementById('openRow') || document.createElement('div');
+    row.id = 'openRow';
+    row.style.marginTop = '1rem';
+    row.innerHTML = '';
 
-  // Open favorites (requires add-on installed)
-  function openDesktop() {
-    const q = searchQuery(); if (!q) return '';
-    return `stremio://discover/series/${catalogId}?addon=${encodeURIComponent(manifestUrl)}&search=${q}`;
-  }
-  function openWeb() {
-    const q = searchQuery(); if (!q) return '';
-    return `https://web.strem.io/#/discover/series/${catalogId}?addon=${encodeURIComponent(manifestUrl)}&search=${q}`;
-  }
-
-  // Render base install buttons
-  (function renderBase() {
-    const wrap = document.createElement('div');
-    wrap.style.marginTop = '1rem';
     const mkBtn = (txt, href, secondary=false) => {
       const a = document.createElement('a');
-      a.textContent = txt; a.href = href || '#'; a.target = '_blank';
+      a.textContent = txt; a.href = href; a.target = '_blank';
       a.style.marginRight = '0.5rem';
       a.style.display = 'inline-block';
       a.style.padding = '0.5rem 1rem';
@@ -203,73 +200,108 @@
       a.style.color = '#fff';
       return a;
     };
-    wrap.appendChild(mkBtn('Install add-on (Desktop)', installDesktop()));
-    wrap.appendChild(mkBtn('Install add-on (Web)', installWeb(), true));
+
+    row.appendChild(mkBtn('Open favorites (Desktop)', openDesktopLink(searchText)));
+    row.appendChild(mkBtn('Open favorites (Web)',     openWebLink(searchText), true));
+
+    // Raw deep link for copy (Desktop)
+    result.textContent = openDesktopLink(searchText);
+    result.style.display = 'block';
+
+    result.insertAdjacentElement('beforebegin', row);
+  };
+
+  // Always show base install buttons
+  (function renderBaseInstall() {
+    const wrap = document.createElement('div');
+    wrap.style.marginTop = '1rem';
+
+    const btnA = document.createElement('a');
+    btnA.textContent = 'Install add-on (Desktop)';
+    btnA.href = installDesktopLink();
+    btnA.style.cssText = 'margin-right:.5rem;display:inline-block;padding:.5rem 1rem;border-radius:4px;background:#ff0000;color:#fff;text-decoration:none;';
+
+    const btnB = document.createElement('a');
+    btnB.textContent = 'Install add-on (Web)';
+    btnB.href = installWebLink();
+    btnB.target = '_blank';
+    btnB.style.cssText = 'display:inline-block;padding:.5rem 1rem;border-radius:4px;background:#333;color:#fff;text-decoration:none;';
+
+    wrap.appendChild(btnA);
+    wrap.appendChild(btnB);
     document.body.appendChild(wrap);
-
-    genBtn.onclick = () => {
-      if (!channels.length) {
-        alert('Add at least one channel first.');
-        return;
-      }
-      const d = openDesktop();
-      const w = openWeb();
-
-      const row = document.createElement('div');
-      row.style.marginTop = '1rem';
-      row.appendChild(mkBtn('Open favorites (Desktop)', d));
-      row.appendChild(mkBtn('Open favorites (Web)', w, true));
-
-      result.textContent = d; // raw deep link (desktop) for copy
-      result.style.display = 'block';
-
-      const existing = document.getElementById('openRow');
-      if (existing) existing.remove();
-      row.id = 'openRow';
-      result.insertAdjacentElement('beforebegin', row);
-    };
   })();
 
-  // NEW: sharable link
-  shareBtn.onclick = async () => {
-    if (!channels.length) { alert('Add at least one channel first.'); return; }
-    const code = encodeList(channels);
-    const url = `${location.origin}${location.pathname}?c=${code}`;
-    await navigator.clipboard.writeText(url).catch(() => {});
-    alert('Sharable link copied! 📋\n\nAnyone opening it will see these channels preloaded.');
-  };
+  // Sharable link (encodes list in ?c=)
+  (function addShareExportImport() {
+    const bar = document.createElement('div');
+    bar.style.marginTop = '0.75rem';
 
-  // NEW: export/import
-  exportBtn.onclick = () => {
-    const blob = new Blob([JSON.stringify(channels, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'youtube-universe-favorites.json';
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-  importInput.onchange = async (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    try {
-      const txt = await f.text();
-      const arr = JSON.parse(txt);
-      if (!Array.isArray(arr)) throw new Error('Invalid file');
-      channels = dedupe(arr.map(String));
-      localStorage.setItem('ytUniverseChannels', JSON.stringify(channels));
-      renderList();
-      alert('Imported favorites ✅');
-    } catch {
-      alert('Could not import that file.');
-    } finally {
-      importInput.value = '';
+    const shareBtn = document.createElement('button');
+    shareBtn.textContent = 'Copy sharable link';
+    const exportBtn = document.createElement('button');
+    exportBtn.textContent = 'Export JSON';
+    exportBtn.className = 'secondary';
+    const importInput = document.createElement('input');
+    importInput.type = 'file'; importInput.accept = 'application/json'; importInput.style.marginLeft = '0.5rem';
+
+    shareBtn.onclick = async () => {
+      if (!channels.length) { alert('Add at least one channel first.'); return; }
+      const code = encB64(JSON.stringify(channels));
+      const url = `${location.origin}${location.pathname}?c=${code}`;
+      try { await navigator.clipboard.writeText(url); } catch {}
+      alert('Sharable link copied! 📋');
+    };
+
+    exportBtn.onclick = () => {
+      const blob = new Blob([JSON.stringify(channels, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'youtube-universe-favorites.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+
+    importInput.onchange = async (e) => {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      try {
+        const arr = JSON.parse(await f.text());
+        if (!Array.isArray(arr)) throw new Error('Invalid file');
+        channels = dedupe(arr.map(String));
+        localStorage.setItem('ytUniverseChannels', JSON.stringify(channels));
+        renderList();
+        alert('Imported favorites ✅');
+      } catch {
+        alert('Could not import that file.');
+      } finally {
+        importInput.value = '';
+      }
+    };
+
+    bar.appendChild(shareBtn);
+    bar.appendChild(exportBtn);
+    bar.appendChild(importInput);
+    result.insertAdjacentElement('beforebegin', bar);
+  })();
+
+  // Boot: load from URL (?c=...) or localStorage
+  (function boot() {
+    const url = new URL(location.href);
+    const c = url.searchParams.get('c');
+    if (c) {
+      try {
+        channels = JSON.parse(decB64(c));
+        channels = normalizeTokens(channels.join(',')); // re-normalize
+        localStorage.setItem('ytUniverseChannels', JSON.stringify(channels));
+      } catch { channels = []; }
+    } else {
+      channels = JSON.parse(localStorage.getItem('ytUniverseChannels') || '[]');
     }
-  };
-
-  // Boot
-  loadInitial();
-  renderList();
+    renderList();
+  })();
 </script>
+
 
 
 </body>
