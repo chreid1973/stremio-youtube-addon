@@ -292,22 +292,36 @@ builder.defineStreamHandler(async ({ id }) => {
 });
 
 // ── START SERVER (Express + static landing) ─────────────
+import express from "express";
+
 const port = process.env.PORT || 7000;
 const addonInterface = builder.getInterface();
 const app = express();
 
-// Serve /public landing page (no template strings => no brace errors)
+// 1) Serve static landing page (no template strings = no braces)
 app.use(express.static("public"));
 
-// Health check (optional)
+// 2) Serve manifest directly
+app.get("/manifest.json", (_req, res) => {
+  res.set("Content-Type", "application/json; charset=utf-8");
+  res.status(200).end(JSON.stringify(manifest));
+});
+
+// 3) Health check
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
-// Hand off everything else (manifest, catalog, meta, stream) to Stremio
-app.use((req, res) => addonInterface(req, res));
+// 4) Hand off everything else to addonInterface.serve(req, res)
+app.use((req, res) => {
+  try {
+    addonInterface.serve(req, res);
+  } catch (e) {
+    console.error("❌ Addon serve error:", e);
+    res.status(500).send("Internal Server Error");
+  }
+});
 
 app.listen(port, () => {
   const base = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
-  console.log(`✅ Add-on + landing page running: ${base}/  (manifest: ${base}/manifest.json)`);
+  console.log(`✅ Add-on running: ${base}/  (manifest: ${base}/manifest.json)`);
 });
-
 
