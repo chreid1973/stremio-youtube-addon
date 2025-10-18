@@ -11,9 +11,8 @@ const CHANNELS = [
    { id: "UCXuqSBlHAE6Xw-yeJA0Tunw", name: "Linus Tech Tips" },
   { id: "UCBJycsmduvYEL83R_U4JriQ", name: "MKBHD" },
   { id: "UCyXiDU5qjfOPxgOPeFWGwKw", name: "Throttle House" },
-  { id: "UChvC5t6xjUbe3kG0k3H4tYA", name: "Team Coco" }
+  { id: "UCi7GJNg51C3jgmYTUwqoUXA", name: "Team Coco" }
 ];
-
 const manifest = {
   id: "community.youtube.channels",
   version: "1.0.6",
