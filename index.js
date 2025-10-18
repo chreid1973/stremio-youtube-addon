@@ -35,18 +35,27 @@ const CHANNEL_GROUPS = {
 // ── Manifest ───────────────────────────────────────────────────
 const manifest = {
   id: "community.youtube.universe",
-  version: "3.2.0",
+  version: "3.2.1",
   name: "YouTube Universe",
-  description:
-  "Per-channel YouTube catalogs by category + easy favorites.\n\n" +
-  "✨ Add your own favorites:\n" +
-  "1) Open the catalog: “Your YouTube Favorites”.\n" +
-  "2) Use the big Search box at the top.\n" +
-  "3) Paste comma-separated channels (handles/URLs/UC IDs), e.g.\n" +
-  "   @mkbhd, @LinusTechTips, https://www.youtube.com/@throttlehouse\n" +
-  "4) Press Enter. Leave Search empty to use the saved JSONBin list.\n\n" +
-  "Streams open directly on YouTube.",
-  logo: "https://www.youtube.com/s/desktop/d743f786/img/favicon_144x144.png",
+  description: `
+Per-channel YouTube catalogs by category, plus easy favorites.
+
+Add your favorites:
+1) Open: "Your YouTube Favorites"
+2) Use the Search box at the top
+3) Paste comma-separated channels (handles/URLs/UC IDs), e.g.
+   @mkbhd, @LinusTechTips, https://www.youtube.com/@throttlehouse
+4) Press Enter
+
+Leave Search empty to use the saved JSONBin list.
+Streams open directly on YouTube.
+`.trim(),
+  // ...rest of your manifest...
+};
+
+  logo: <p align="center">
+ <img width="256" height="256" alt="image" src="https://github.com/user-attachments/assets/64f2e4e7-81da-4483-88ad-95728c7de5e2" />
+</p>,
   resources: ["catalog", "meta", "stream"],
   types: ["series"],
   idPrefixes: ["yt"],
@@ -128,7 +137,7 @@ async function resolveHandlesToIds(tokens) {
   return Array.from(new Set(out));
 }
 
-async function fetchUploadsMetas(channelId, maxResults = 12) {
+async function fetchUploadsMetas(channelId, maxResults = 20) {
   const ch = await yt("channels", { part: "contentDetails", id: channelId });
   const uploadsId = ch.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
   if (!uploadsId) return [];
