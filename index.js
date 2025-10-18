@@ -1,6 +1,5 @@
 // ────────────────────────────────────────────────────────────────
-//  YouTube Universe — Per-Channel Catalogs + Easy Favorites
-//  (SDK-only server; no Express; robust handle/URL parsing)
+//  YouTube Universe — Per-Channel Catalogs + Low-Quota Mode
 // ────────────────────────────────────────────────────────────────
 
 import pkg from "stremio-addon-sdk";
@@ -9,20 +8,13 @@ import fetch from "node-fetch";
 const { addonBuilder, serveHTTP } = pkg;
 
 // ── Environment Vars ────────────────────────────────────────────
-// Required:
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
-
-// Optional (used only if user favorites search box is empty):
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || "";
 const JSONBIN_ID  = process.env.JSONBIN_ID || "";
 const JSONBIN_KEY = process.env.JSONBIN_KEY || "";
+const VIDEOS_PER_CHANNEL = Math.min(Number(process.env.VIDEOS_PER_CHANNEL) || 20, 50);
+const USE_RSS_FALLBACK = /^(1|true)$/i.test(process.env.USE_RSS_FALLBACK || "");
 
-// How many uploads per channel (YouTube caps per request at 50)
-const VIDEOS_PER_CHANNEL = Math.min(
-  Number(process.env.VIDEOS_PER_CHANNEL) || 20,
-  50
-);
-
-// ── Channel Groups (curated) ───────────────────────────────────
+// ── Channel Groups ──────────────────────────────────────────────
 const CHANNEL_GROUPS = {
   Tech: [
     { id: "UCXuqSBlHAE6Xw-yeJA0Tunw", name: "Linus Tech Tips" },
@@ -45,7 +37,7 @@ const CHANNEL_GROUPS = {
 // ── Manifest ───────────────────────────────────────────────────
 const manifest = {
   id: "community.youtube.universe",
-  version: "3.3.0",
+  version: "3.4.0",
   name: "YouTube Universe",
   description: [
     "Per-channel YouTube catalogs by category, plus easy favorites.",
@@ -60,14 +52,14 @@ const manifest = {
     "Shortcuts: pack:tech  pack:auto  pack:podcasts  pack:entertainment",
     "",
     "Leave Search empty to use the saved JSONBin list (if configured).",
-    "Streams open directly on YouTube."
+    "Streams open directly on YouTube.",
+    USE_RSS_FALLBACK ? "\n🕊 Low-quota mode enabled (RSS + oEmbed)" : ""
   ].join("\n"),
   logo: "https://www.youtube.com/s/desktop/d743f786/img/favicon_144x144.png",
   resources: ["catalog", "meta", "stream"],
   types: ["series"],
   idPrefixes: ["yt"],
   catalogs: [
-    // One catalog per channel, grouped in the name for tidy browsing
     ...Object.entries(CHANNEL_GROUPS).flatMap(([group, chans]) =>
       chans.map(ch => ({
         type: "series",
@@ -75,7 +67,6 @@ const manifest = {
         name: `YouTube Universe: ${group} – ${ch.name}`
       }))
     ),
-    // Favorites via built-in 'search' (appears as the big search box)
     {
       type: "series",
       id: "youtube-user",
@@ -87,7 +78,7 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-// ── Helpers ────────────────────────────────────────────
+// ── YouTube API Helper (normal mode) ─────────────────────────────
 async function yt(endpoint, params = {}) {
   if (!YOUTUBE_API_KEY) throw new Error("Missing YOUTUBE_API_KEY");
   const url = new URL(`https://www.googleapis.com/youtube/v3/${endpoint}`);
@@ -96,181 +87,184 @@ async function yt(endpoint, params = {}) {
   const r = await fetch(url);
   if (!r.ok) {
     const body = await r.text();
-    console.error("[YT] ERROR", endpoint, r.status, r.statusText, body.slice(0, 200));
+    console.error("[YT] ERROR", endpoint, r.status, r.statusText, body.slice(0, 120));
     throw new Error(`YT ${endpoint} ${r.status}`);
   }
   return r.json();
 }
 
+// ── JSONBin Fallback (optional) ─────────────────────────────────
 async function fetchBin() {
   if (!JSONBIN_ID) return [];
   const headers = JSONBIN_KEY ? { "X-Master-Key": JSONBIN_KEY } : {};
   const res = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_ID}/latest`, { headers });
   if (!res.ok) return [];
   const data = await res.json();
-  // Accept either ["UC..."] or [{ id, name }]
-  const arr = data?.record?.channels || [];
-  return arr.map(x => (typeof x === "string" ? { id: x, name: x } : x)).filter(Boolean);
+  return (data?.record?.channels || []).map(x =>
+    typeof x === "string" ? { id: x, name: x } : x
+  );
 }
 
-// Extract @handles, UC ids, channel URLs from any blob of text
+// ── LOW-QUOTA HELPERS (no API key) ─────────────────────────────
+async function scrapeHandleToId(handle) {
+  const h = String(handle).replace(/^@/, "");
+  const url = `https://www.youtube.com/@${encodeURIComponent(h)}`;
+  const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!res.ok) throw new Error(`scrape ${res.status}`);
+  const html = await res.text();
+  const m = html.match(/"channelId":"(UC[0-9A-Za-z_-]{20,})"/);
+  return m ? m[1] : null;
+}
+
+async function fetchUploadsMetasRSS(channelId, maxResults = VIDEOS_PER_CHANNEL) {
+  const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+  const r = await fetch(feedUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!r.ok) throw new Error(`rss ${r.status}`);
+  const xml = await r.text();
+  const entries = xml.split("<entry>").slice(1);
+  const metas = [];
+  for (const e of entries.slice(0, Math.min(maxResults, 50))) {
+    const vid = (e.match(/<yt:videoId>([^<]+)<\/yt:videoId>/) || [])[1];
+    const title = (e.match(/<title>([^<]+)<\/title>/) || [])[1];
+    const thumb = (e.match(/media:thumbnail[^>]+url="([^"]+)"/) || [])[1];
+    if (!vid) continue;
+    metas.push({
+      id: `yt:${vid}`,
+      type: "series",
+      name: title || vid,
+      poster: thumb,
+      description: "",
+      posterShape: "landscape"
+    });
+  }
+  return metas;
+}
+
+async function oembedMeta(videoId) {
+  const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&format=json`;
+  const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!r.ok) return null;
+  return await r.json();
+}
+
+// ── Handle / ID Parsing ─────────────────────────────────────────
 function parseChannelTokens(raw) {
   const text = String(raw || "");
+  const out = [];
 
-  const handles = Array.from(text.matchAll(/@([A-Za-z0-9._-]+)/g))
-    .map(m => ({ type: "handle", value: m[1] }));
+  const push = (t, v) => out.push({ type: t, value: v });
 
-  const ucIds = Array.from(text.matchAll(/\b(UC[0-9A-Za-z_-]{20,})\b/g))
-    .map(m => ({ type: "id", value: m[1] }));
-
-  const urlUC = Array.from(text.matchAll(/youtube\.com\/channel\/(UC[0-9A-Za-z_-]{20,})/gi))
-    .map(m => ({ type: "id", value: m[1] }));
-
-  const urlAt = Array.from(text.matchAll(/youtube\.com\/@([A-Za-z0-9._-]+)/gi))
-    .map(m => ({ type: "handle", value: m[1] }));
-
-  const loose = text
-    .split(/[\s,]+/g)
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(token => {
-      if (/^https?:\/\//i.test(token)) return null; // URLs already handled above
-      if (/^UC[0-9A-Za-z_-]{20,}$/.test(token)) return { type: "id", value: token };
-      if (token.startsWith("@")) return { type: "handle", value: token.slice(1) };
-      return null;
-    })
-    .filter(Boolean);
-
-  const seen = new Set();
-  const all = [...handles, ...ucIds, ...urlUC, ...urlAt, ...loose].filter(t => {
-    const key = `${t.type}:${t.value.toLowerCase()}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+  text.split(/[\s,]+/).forEach(token => {
+    token = token.trim();
+    if (!token) return;
+    if (/^UC[0-9A-Za-z_-]{20,}$/.test(token)) push("id", token);
+    else if (token.startsWith("@")) push("handle", token.slice(1));
+    else if (token.includes("youtube.com/")) {
+      const m1 = token.match(/channel\/(UC[0-9A-Za-z_-]{20,})/);
+      const m2 = token.match(/@([A-Za-z0-9._-]+)/);
+      if (m1) push("id", m1[1]);
+      else if (m2) push("handle", m2[1]);
+    }
   });
-
-  return all;
+  return out;
 }
 
-// Cache to avoid repeating lookups during a session
 const HANDLE_CACHE = new Map();
 
 async function resolveHandlesToIds(tokens) {
   const out = [];
-
   for (const t of tokens) {
-    if (t.type === "id") {
-      out.push(t.value);
+    if (t.type === "id") { out.push(t.value); continue; }
+
+    const handle = t.value.toLowerCase();
+    if (HANDLE_CACHE.has(handle)) { out.push(HANDLE_CACHE.get(handle)); continue; }
+
+    if (USE_RSS_FALLBACK) {
+      try {
+        const cid = await scrapeHandleToId(handle);
+        if (cid) { HANDLE_CACHE.set(handle, cid); out.push(cid); }
+      } catch (_) {}
       continue;
     }
 
-    const handle = t.value.replace(/^@/, "").toLowerCase();
-    if (HANDLE_CACHE.has(handle)) {
-      out.push(HANDLE_CACHE.get(handle));
-      continue;
-    }
-
-    // 1-unit call: channels.list with forHandle
+    // normal API path
     try {
       const ch = await yt("channels", { part: "id", forHandle: handle });
       const cid = ch.items?.[0]?.id;
-      if (cid) {
-        HANDLE_CACHE.set(handle, cid);
-        out.push(cid);
-        continue;
-      }
-    } catch (_) { /* fall through to legacy fallback */ }
+      if (cid) { HANDLE_CACHE.set(handle, cid); out.push(cid); continue; }
+    } catch (_) {}
 
-    // Legacy fallback only if needed (costly: 100 units)
     try {
-      const res = await yt("search", {
-        part: "snippet",
-        q: `@${handle}`,
-        type: "channel",
-        maxResults: "1"
-      });
+      const res = await yt("search", { part: "snippet", q: `@${handle}`, type: "channel", maxResults: "1" });
       const cid = res.items?.[0]?.id?.channelId;
-      if (cid) {
-        HANDLE_CACHE.set(handle, cid);
-        out.push(cid);
-      }
-    } catch (_) {
-      // swallow; no ID for this token
-    }
+      if (cid) { HANDLE_CACHE.set(handle, cid); out.push(cid); }
+    } catch (_) {}
   }
-
-  // Deduplicate
   return Array.from(new Set(out));
 }
 
-
+// ── Uploads Fetcher (auto-fallback) ─────────────────────────────
 async function fetchUploadsMetas(channelId, maxResults = VIDEOS_PER_CHANNEL) {
-  const ch = await yt("channels", { part: "contentDetails", id: channelId });
-  const uploadsId = ch.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
-  if (!uploadsId) return [];
-  const pl = await yt("playlistItems", {
-    part: "snippet",
-    playlistId: uploadsId,
-    maxResults: String(Math.min(maxResults, 50))
-  });
-  return (pl.items || []).map(item => {
-    const s = item.snippet || {};
-    const t = s.thumbnails || {};
-    return {
-      id: `yt:${s.resourceId.videoId}`,
-      type: "series",
-      name: s.title,
-      poster: t.high?.url || t.medium?.url || t.default?.url,
-      description: (s.description || "").slice(0, 200),
-      posterShape: "landscape"
-    };
-  });
+  if (USE_RSS_FALLBACK) {
+    try { return await fetchUploadsMetasRSS(channelId, maxResults); }
+    catch (e) { console.error("RSS fetch error", channelId, e.message); return []; }
+  }
+  try {
+    const ch = await yt("channels", { part: "contentDetails", id: channelId });
+    const uploadsId = ch.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploadsId) return [];
+    const pl = await yt("playlistItems", {
+      part: "snippet",
+      playlistId: uploadsId,
+      maxResults: String(Math.min(maxResults, 50))
+    });
+    return (pl.items || []).map(item => {
+      const s = item.snippet || {};
+      const t = s.thumbnails || {};
+      return {
+        id: `yt:${s.resourceId.videoId}`,
+        type: "series",
+        name: s.title,
+        poster: t.high?.url || t.medium?.url || t.default?.url,
+        description: (s.description || "").slice(0, 200),
+        posterShape: "landscape"
+      };
+    });
+  } catch (e) {
+    console.warn("[API] fallback to RSS for", channelId, e.message);
+    try { return await fetchUploadsMetasRSS(channelId, maxResults); }
+    catch (e2) { console.error("RSS fallback failed", channelId, e2.message); return []; }
+  }
 }
 
-// ── Catalog Handler ────────────────────────────────────
+// ── Catalog Handler ─────────────────────────────────────────────
 builder.defineCatalogHandler(async ({ id, extra }) => {
   let channels = [];
 
-  // Per-channel catalogs: youtube-<group>-<UCID>
   const match = id.match(/^youtube-(.+?)-([A-Za-z0-9_-]+)$/);
   if (match) {
     const [, group, channelId] = match;
-    const groupKey = Object.keys(CHANNEL_GROUPS).find(g => g.toLowerCase() === group);
-    const ch = CHANNEL_GROUPS[groupKey]?.find(c => c.id === channelId);
+    const g = Object.keys(CHANNEL_GROUPS).find(x => x.toLowerCase() === group);
+    const ch = CHANNEL_GROUPS[g]?.find(c => c.id === channelId);
     if (ch) channels = [ch];
   }
-  // Favorites via built-in 'search'; fallback to JSONBin if empty
   else if (id === "youtube-user") {
     const raw = (extra?.search || "").trim();
-
-    // Pack shortcuts
     if (raw) {
-      const packMatch = raw.match(/^pack:(tech|auto(?:motive)?|podcasts?|entertainment)$/i);
-      if (packMatch) {
-        const map = {
-          tech: "Tech",
-          auto: "Automotive",
-          automotive: "Automotive",
-          podcast: "Podcasts",
-          podcasts: "Podcasts",
-          entertainment: "Entertainment"
-        };
-        const group = map[packMatch[1].toLowerCase()];
-        if (group && CHANNEL_GROUPS[group]) channels = CHANNEL_GROUPS[group];
+      const pack = raw.match(/^pack:(tech|auto|automotive|podcasts?|entertainment)$/i);
+      if (pack) {
+        const m = { tech:"Tech",auto:"Automotive",automotive:"Automotive",podcast:"Podcasts",podcasts:"Podcasts",entertainment:"Entertainment" };
+        const g = m[pack[1].toLowerCase()];
+        if (g) channels = CHANNEL_GROUPS[g];
       }
     }
-
-    // If not a pack or not found, parse free-form
     if (!channels.length && raw) {
       const parsed = parseChannelTokens(raw);
-      const channelIds = await resolveHandlesToIds(parsed);
-      channels = channelIds.map(cid => ({ id: cid, name: cid }));
+      const ids = await resolveHandlesToIds(parsed);
+      channels = ids.map(cid => ({ id: cid, name: cid }));
     }
-
-    // If search empty, fall back to JSONBin (optional)
     if (!channels.length && !raw) {
-      try { channels = await fetchBin(); }
-      catch { channels = []; }
+      try { channels = await fetchBin(); } catch { channels = []; }
     }
   }
 
@@ -281,39 +275,61 @@ builder.defineCatalogHandler(async ({ id, extra }) => {
     try {
       metas.push(...await fetchUploadsMetas(ch.id, VIDEOS_PER_CHANNEL));
     } catch (e) {
-      console.error("Catalog fetch error for", ch.id, e.message);
+      console.error("Catalog fetch error", ch.id, e.message);
     }
   }
-
   return { metas };
 });
 
-// ── Meta Handler ───────────────────────────────────────
+// ── Meta Handler ───────────────────────────────────────────────
 builder.defineMetaHandler(async ({ id }) => {
   const vid = id.replace("yt:", "");
+
+  if (USE_RSS_FALLBACK) {
+    const oe = await oembedMeta(vid);
+    if (!oe) return { meta: null };
+    return { meta: {
+      id, type: "series",
+      name: oe.title,
+      poster: oe.thumbnail_url,
+      background: oe.thumbnail_url,
+      description: `${oe.title}\nby ${oe.author_name}`,
+      posterShape: "landscape",
+      videos: [{ id, title: oe.title, season: 1, episode: 1 }]
+    }};
+  }
+
   try {
     const data = await yt("videos", { part: "snippet,contentDetails,statistics", id: vid });
     const v = data.items?.[0];
     if (!v) return { meta: null };
     const t = v.snippet?.thumbnails || {};
-    return {
-      meta: {
-        id,
-        type: "series",
-        name: v.snippet.title,
-        poster: t.high?.url || t.medium?.url || t.default?.url,
-        background: t.maxres?.url || t.high?.url,
-        description: `${v.snippet.description || ""}\nViews: ${v.statistics?.viewCount || 0}`,
-        videos: [{ id, title: v.snippet.title, season: 1, episode: 1, released: v.snippet.publishedAt }]
-      }
-    };
+    return { meta: {
+      id, type: "series",
+      name: v.snippet.title,
+      poster: t.high?.url || t.medium?.url || t.default?.url,
+      background: t.maxres?.url || t.high?.url,
+      description: `${v.snippet.description || ""}\nViews: ${v.statistics?.viewCount || 0}`,
+      posterShape: "landscape",
+      videos: [{ id, title: v.snippet.title, season: 1, episode: 1, released: v.snippet.publishedAt }]
+    }};
   } catch (e) {
-    console.error("Meta error", e.message);
-    return { meta: null };
+    console.warn("[API] meta fallback via oEmbed", e.message);
+    const oe = await oembedMeta(vid);
+    if (!oe) return { meta: null };
+    return { meta: {
+      id, type: "series",
+      name: oe.title,
+      poster: oe.thumbnail_url,
+      background: oe.thumbnail_url,
+      description: `${oe.title}\nby ${oe.author_name}`,
+      posterShape: "landscape",
+      videos: [{ id, title: oe.title, season: 1, episode: 1 }]
+    }};
   }
 });
 
-// ── Stream Handler (open on YouTube) ───────────────────
+// ── Stream Handler ─────────────────────────────────────────────
 builder.defineStreamHandler(async ({ id }) => {
   const vid = id.split(":")[1];
   return {
@@ -321,7 +337,7 @@ builder.defineStreamHandler(async ({ id }) => {
   };
 });
 
-// ── Serve with the SDK’s native server (stable) ────────
+// ── Serve ──────────────────────────────────────────────────────
 const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port });
-console.log(`✅ Add-on running at http://localhost:${port}/manifest.json`);
+console.log(`✅ YouTube Universe running on http://localhost:${port}/manifest.json ${USE_RSS_FALLBACK ? "(Low-quota mode)" : ""}`);
