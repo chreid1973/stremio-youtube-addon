@@ -2,7 +2,7 @@
 //  YouTube Universe — Per-Channel Catalogs + Easy Favorites (search box)
 // ────────────────────────────────────────────────────────────────
 
-import express from "express";
+
 import path from "path";
 import { fileURLToPath } from "url";
 import fetch from "node-fetch";
