@@ -1,17 +1,115 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>YouTube Universe · Stremio Add-on</title>
-  <body style="font-family: system-ui; padding: 24px">
-    <h1>🎬 YouTube Universe</h1>
-    <p>Install via manifest URL:</p>
-    <code id="m"></code>
-    <script>
-      const m = location.origin + "/manifest.json";
-      document.getElementById("m").textContent = m;
-    </script>
-    <p><a href="/manifest.json">Open manifest.json</a></p>
-    <p><a href="https://github.com/chreid1973/stremio-youtube-addon">GitHub Repo</a></p>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YouTube Universe Setup</title>
+  <style>
+    body {
+      background: #0f0f0f;
+      color: #fff;
+      font-family: system-ui, sans-serif;
+      padding: 2rem;
+      max-width: 600px;
+      margin: auto;
+    }
+    h1 { font-weight: 600; }
+    .channel { display: flex; align-items: center; margin: 0.3rem 0; }
+    input[type="text"] {
+      background: #181818;
+      color: #fff;
+      border: 1px solid #333;
+      padding: 0.5rem;
+      width: 100%;
+    }
+    button {
+      background: #ff0000;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      margin-left: 0.5rem;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button.secondary {
+      background: #333;
+    }
+    .list { margin-top: 1rem; }
+    .link-box {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      border: 1px dashed #444;
+      word-break: break-all;
+      background: #181818;
+    }
+  </style>
+</head>
+<body>
+  <h1>YouTube Universe Setup</h1>
+  <p>Add your favorite YouTube channels (handles or URLs):</p>
+
+  <div class="add-form">
+    <input id="channelInput" type="text" placeholder="@mkbhd or https://www.youtube.com/@LinusTechTips" />
+    <button id="addBtn">Add</button>
+  </div>
+
+  <div id="channelList" class="list"></div>
+
+  <button id="saveBtn" class="secondary">💾 Save locally</button>
+  <button id="generateBtn">🔗 Generate Stremio Link</button>
+
+  <div id="result" class="link-box" style="display:none;"></div>
+
+  <script>
+    const input = document.getElementById('channelInput');
+    const listDiv = document.getElementById('channelList');
+    const saveBtn = document.getElementById('saveBtn');
+    const genBtn = document.getElementById('generateBtn');
+    const result = document.getElementById('result');
+
+    let channels = JSON.parse(localStorage.getItem('ytUniverseChannels') || '[]');
+
+    function renderList() {
+      listDiv.innerHTML = '';
+      channels.forEach((ch, i) => {
+        const div = document.createElement('div');
+        div.className = 'channel';
+        div.innerHTML = `<span>${ch}</span> <button class="secondary" onclick="removeChannel(${i})">✖</button>`;
+        listDiv.appendChild(div);
+      });
+    }
+
+    function removeChannel(i) {
+      channels.splice(i, 1);
+      renderList();
+    }
+
+    document.getElementById('addBtn').onclick = () => {
+      const val = input.value.trim();
+      if (!val) return;
+      if (!channels.includes(val)) channels.push(val);
+      input.value = '';
+      renderList();
+    };
+
+    saveBtn.onclick = () => {
+      localStorage.setItem('ytUniverseChannels', JSON.stringify(channels));
+      alert('Saved locally!');
+    };
+
+    genBtn.onclick = () => {
+      if (!channels.length) {
+        alert('Add at least one channel first!');
+        return;
+      }
+      const query = encodeURIComponent(channels.join(','));
+      const addonUrl = 'https://stremio-youtube-addon.onrender.com/manifest.json';
+      const stremioLink = `stremio://addon-install?addon=${addonUrl}&extra=search=${query}`;
+      result.textContent = stremioLink;
+      result.style.display = 'block';
+    };
+
+    renderList();
+  </script>
+</body>
 </html>
