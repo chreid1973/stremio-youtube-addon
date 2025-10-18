@@ -37,7 +37,7 @@ const manifest = {
   id: "community.youtube.universe",
   version: "3.2.0",
   name: "YouTube Universe",
-  description: description:
+  description:
   "Per-channel YouTube catalogs by category + easy favorites.\n\n" +
   "✨ Add your own favorites:\n" +
   "1) Open the catalog: “Your YouTube Favorites”.\n" +
