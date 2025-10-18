@@ -324,7 +324,81 @@ builder.defineStreamHandler(async ({ id }) => {
   return { streams: [{ title: "🎬 Open on YouTube", externalUrl: `https://www.youtube.com/watch?v=${videoId}` }] };
 });
 
-// ── Serve ───────────────────────────────────────────────
+/* ───────────────────────────────
+   START SERVER + LANDING PAGE
+──────────────────────────────── */
+import express from "express";
+
 const port = process.env.PORT || 7000;
-serveHTTP(builder.getInterface(), { port });
-console.log(`✅ Add-on running: http://localhost:${port}/manifest.json`);
+const addonInterface = builder.getInterface();
+const app = express();
+
+// Pretty landing page at "/"
+app.get("/", (_req, res) => {
+  const base = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
+  const manifestUrl = `${base}/manifest.json`;
+  const repo = "https://github.com/chreid1973/stremio-youtube-addon";
+
+  res.set("Content-Type", "text/html; charset=utf-8");
+  res.send(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>YouTube Universe · Stremio Add-on</title>
+<style>
+  :root{--bg:#0f1115;--card:#151822;--text:#eef2ff;--muted:#a8b3cf;--accent:#ff3355;--link:#7aa2ff}
+  *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#0f1115,#0b0d12);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
+  .wrap{max-width:920px;margin:6vh auto;padding:24px}
+  .card{background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:28px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  h1{margin:0 0 12px;font-size:28px;letter-spacing:.2px}
+  p{color:var(--muted);margin:10px 0 18px}
+  code{background:#0b0d12;padding:2px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.06)}
+  .row{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0 8px}
+  .btn{border:1px solid rgba(255,255,255,.12);background:#111420;color:var(--text);padding:10px 14px;border-radius:10px;text-decoration:none;display:inline-flex;gap:8px;align-items:center}
+  .btn.primary{background:var(--accent);border-color:transparent}
+  .pill{display:inline-block;background:#0b0d12;border:1px solid rgba(255,255,255,.06);padding:6px 10px;border-radius:999px;color:var(--muted);font-size:13px}
+  footer{margin-top:14px;color:var(--muted);font-size:13px}
+  a{color:var(--link)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <span class="pill">Stremio Add-on</span>
+      <h1>🎬 YouTube Universe</h1>
+      <p>Curated YouTube channels by category + your own saved favorites. Per-channel catalogs, persistent favorites via JSONBin. Videos open directly on YouTube.</p>
+
+      <div class="row">
+        <a class="btn primary" href="${manifestUrl}">📄 Manifest.json</a>
+        <a class="btn" href="${repo}" target="_blank" rel="noopener">⭐ GitHub Repo</a>
+      </div>
+
+      <h3>Install in Stremio</h3>
+      <p>Copy this URL and paste into <strong>Add-ons → Community → Install via URL</strong>:</p>
+      <p><code>${manifestUrl}</code></p>
+
+      <h3>Tips</h3>
+      <ul>
+        <li><strong>Your YouTube Favorites</strong> → Filter: set <code>uid</code>, pick <code>action</code>, paste <code>@handles</code> or channel URLs.</li>
+        <li>Browse creators under Tech / Automotive / Podcasts / Entertainment.</li>
+      </ul>
+
+      <footer>Built by <strong>Cary Reid</strong> • YouTube Data API v3 • MIT Licensed</footer>
+    </div>
+  </div>
+</body>
+</html>`);
+});
+
+// Health check (optional)
+app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+// Hand off everything else (manifest, catalog, meta, stream) to Stremio
+app.use((req, res) => addonInterface(req, res));
+
+app.listen(port, () => {
+  const base = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
+  console.log(`✅ Add-on + landing page running: ${base}/  (manifest: ${base}/manifest.json)`);
+});
+
