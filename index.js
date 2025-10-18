@@ -4,7 +4,7 @@
 import sdk from "stremio-addon-sdk";
 const { addonBuilder } = sdk;
 import fetch from "node-fetch";            // npm i node-fetch@3
-import express from "express";             // npm i express
+
 
 // ── Required env vars ───────────────────────────────────
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;         // YouTube Data API v3
@@ -291,9 +291,7 @@ builder.defineStreamHandler(async ({ id }) => {
   return { streams: [{ title: "🎬 Open on YouTube", externalUrl: `https://www.youtube.com/watch?v=${videoId}` }] };
 });
 
-// ── START SERVER (SDK default) ───────────────────────────
-import { serveHTTP } from "stremio-addon-sdk";
-
+// ── Serve ───────────────────────────────────────────────
 const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port });
-console.log(`✅ YouTube Universe running: http://localhost:${port}/manifest.json`);
+console.log(`✅ Add-on running: http://localhost:${port}/manifest.json`);
