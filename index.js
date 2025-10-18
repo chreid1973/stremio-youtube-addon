@@ -24,10 +24,13 @@ const CHANNEL_GROUPS = {
   ],
   Automotive: [
     { id: "UCWqW23Ko6dbscptZYyQE-8A", name: "Zip Tie Tuning" },
+    { id: "UCdOXRB936PKSwx0J7SgF6SQ", name: "EDDIE X" },
     { id: "UCyXiDU5qjfOPxgOPeFWGwKw", name: "Throttle House" }
   ],
   Podcasts: [
     { id: "UCEcrRXW3oEYfUctetZTAWLw", name: "WVFRM Podcast" },
+    { id: "UC24RSoLcjiNZbQcT54j5l7Q", name: "Diggnation" },
+    { id: "UCghJTNTO9kcDeUFXMuSDGLQ", name: "AI For Humans" },
     { id: "UCi7GJNg51C3jgmYTUwqoUXA", name: "Team COCO" }
   ],
   Entertainment: [
