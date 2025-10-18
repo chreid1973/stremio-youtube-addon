@@ -5,6 +5,18 @@
 import fetch from "node-fetch";
 import pkg from "stremio-addon-sdk";
 const { addonBuilder, serveHTTP } = pkg;
+// Pull this many uploads per channel (YouTube caps at 50)
+const VIDEOS_PER_CHANNEL = 20;
+const metas = [];
+for (const ch of channels) {
+  try {
+    metas.push(...await fetchUploadsMetas(ch.id, VIDEOS_PER_CHANNEL));
+  } catch (e) {
+    console.error("Catalog fetch error for", ch.id, e.message);
+  }
+}
+return { metas };
+
 
 // ── Environment Vars (Render → Environment) ─────────────────────
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
@@ -98,25 +110,43 @@ async function fetchBin() {
 
 // Parse a comma-separated string of handles/URLs/UC IDs → [{type,value}]
 function parseChannelTokens(raw) {
-  return String(raw)
-    .split(",")
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(token => {
-      if (/^https?:\/\//i.test(token)) {
-        try {
-          const u = new URL(token);
-          const mUC = u.pathname.match(/\/channel\/(UC[0-9A-Za-z_-]{20,})/i);
-          if (mUC) return { type: "id", value: mUC[1] };
-          const mAt = u.pathname.match(/@([A-Za-z0-9._-]+)/);
-          if (mAt) return { type: "handle", value: mAt[1] };
-        } catch {}
-      }
+  const text = String(raw || "");
+
+  // Match @handles anywhere
+  const handles = Array.from(text.matchAll(/@([A-Za-z0-9._-]+)/g))
+    .map(m => ({ type: "handle", value: m[1] }));
+
+  // Match raw UC IDs
+  const ucIds = Array.from(text.matchAll(/\b(UC[0-9A-Za-z_-]{20,})\b/g))
+    .map(m => ({ type: "id", value: m[1] }));
+
+  // Match URLs containing channel/UC... or /@handle
+  const urlUC  = Array.from(text.matchAll(/youtube\.com\/channel\/(UC[0-9A-Za-z_-]{20,})/gi))
+    .map(m => ({ type: "id", value: m[1] }));
+  const urlAt  = Array.from(text.matchAll(/youtube\.com\/@([A-Za-z0-9._-]+)/gi))
+    .map(m => ({ type: "handle", value: m[1] }));
+
+  // Also split blobs on whitespace/commas to catch loose tokens
+  const loose = text.split(/[\s,]+/g)
+    .map(s => s.trim()).filter(Boolean).map(token => {
+      if (/^https?:\/\//i.test(token)) return null; // already covered by URL regexes
       if (/^UC[0-9A-Za-z_-]{20,}$/.test(token)) return { type: "id", value: token };
       if (token.startsWith("@")) return { type: "handle", value: token.slice(1) };
-      return { type: "handle", value: token.replace(/^@/, "") };
-    });
+      return null;
+    }).filter(Boolean);
+
+  // Deduplicate
+  const seen = new Set();
+  const all = [...handles, ...ucIds, ...urlUC, ...urlAt, ...loose].filter(t => {
+    const key = `${t.type}:${t.value.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return all;
 }
+
 
 async function resolveHandlesToIds(tokens) {
   const out = [];
@@ -133,11 +163,15 @@ async function resolveHandlesToIds(tokens) {
   return Array.from(new Set(out));
 }
 
-async function fetchUploadsMetas(channelId, maxResults = 20) {
+async function fetchUploadsMetas(channelId, maxResults = VIDEOS_PER_CHANNEL) {
   const ch = await yt("channels", { part: "contentDetails", id: channelId });
   const uploadsId = ch.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
   if (!uploadsId) return [];
-  const pl = await yt("playlistItems", { part: "snippet", playlistId: uploadsId, maxResults: String(maxResults) });
+  const pl = await yt("playlistItems", {
+    part: "snippet",
+    playlistId: uploadsId,
+    maxResults: String(Math.min(maxResults, 50))
+  });
   return (pl.items || []).map(item => {
     const s = item.snippet;
     const t = s?.thumbnails || {};
@@ -152,6 +186,7 @@ async function fetchUploadsMetas(channelId, maxResults = 20) {
   });
 }
 
+
 // ── Catalog Handler ────────────────────────────────────
 builder.defineCatalogHandler(async ({ id, extra }) => {
   let channels = [];
@@ -165,28 +200,66 @@ builder.defineCatalogHandler(async ({ id, extra }) => {
     if (ch) channels = [ch];
   }
   // Favorites: read from built-in 'search' box; fall back to JSONBin if empty
-  else if (id === "youtube-user") {
-    const raw = (extra?.search || "").trim();
-    if (raw) {
-      const parsed = parseChannelTokens(raw);
-      const channelIds = await resolveHandlesToIds(parsed);
-      channels = channelIds.map(cid => ({ id: cid, name: cid }));
-    } else {
-      try { channels = (await fetchBin()).map(c => (typeof c === "string" ? { id: c, name: c } : c)); }
-      catch { channels = []; }
+ else if (id === "youtube-user") {
+  const raw = (extra?.search || "").trim();
+
+  // Quick packs: pack:tech, pack:auto, pack:podcasts, pack:entertainment
+  if (raw) {
+    const packMatch = raw.match(/^pack:(tech|auto(?:motive)?|podcasts?|entertainment)$/i);
+    if (packMatch) {
+      const map = {
+        tech: "Tech",
+        auto: "Automotive",
+        automotive: "Automotive",
+        podcast: "Podcasts",
+        podcasts: "Podcasts",
+        entertainment: "Entertainment"
+      };
+      const group = map[packMatch[1].toLowerCase()];
+      if (group && CHANNEL_GROUPS[group]) {
+        channels = CHANNEL_GROUPS[group]; // use curated group
+      }
     }
   }
 
-  if (!channels.length) return { metas: [] };
+  // If not a pack (or pack not found), parse free-form input
+  if (!channels.length && raw) {
+    const parsed = parseChannelTokens(raw);
 
-  const metas = [];
-  for (const ch of channels) {
+    // Resolve @handles → UC IDs via YT search
+    const resolveHandlesToIds = async (tokens) => {
+      const ids = [];
+      for (const t of tokens) {
+        if (t.type === "id") {
+          ids.push(t.value);
+        } else {
+          try {
+            const res = await yt("search", {
+              part: "snippet",
+              q: `@${t.value}`,
+              type: "channel",
+              maxResults: "1"
+            });
+            const cid = res.items?.[0]?.id?.channelId;
+            if (cid) ids.push(cid);
+          } catch {}
+        }
+      }
+      return Array.from(new Set(ids));
+    };
+
+    const channelIds = await resolveHandlesToIds(parsed);
+    channels = channelIds.map(cid => ({ id: cid, name: cid }));
+  }
+
+  // If search empty, fall back to JSONBin
+  if (!channels.length && !raw) {
     try {
-      metas.push(...await fetchUploadsMetas(ch.id, 12));
-    } catch (e) {
-      console.error("Catalog fetch error for", ch.id, e.message);
-    }
+      channels = (await fetchBin()).map(c => (typeof c === "string" ? { id: c, name: c } : c));
+    } catch { channels = []; }
   }
+}
+
   return { metas };
 });
 
