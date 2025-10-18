@@ -290,10 +290,8 @@ builder.defineStreamHandler(async ({ id }) => {
   const videoId = String(id).split(":")[1] || String(id).replace(/^yt:/, "");
   return { streams: [{ title: "🎬 Open on YouTube", externalUrl: `https://www.youtube.com/watch?v=${videoId}` }] };
 });
-
-// ── START SERVER (Express + static landing) ─────────────
 import express from "express";
-
+// ── START SERVER (Express + static landing) ─────────────
 const port = process.env.PORT || 7000;
 const addonInterface = builder.getInterface();
 const app = express();
