@@ -6,7 +6,7 @@ import fetch from "node-fetch";
 import pkg from "stremio-addon-sdk";
 const { addonBuilder, serveHTTP } = pkg;
 // Pull this many uploads per channel (YouTube caps at 50)
-const VIDEOS_PER_CHANNEL = 20;
+const VIDEOS_PER_CHANNEL;
 
 
 
@@ -81,7 +81,12 @@ const manifest = {
 const builder = new addonBuilder(manifest);
 
 // ── Helpers ────────────────────────────────────────────
-const VIDEOS_PER_CHANNEL = 20; // YouTube caps at 50 per request
+// Pull this many uploads per channel (YouTube caps at 50)
+const VIDEOS_PER_CHANNEL = Math.min(
+  Number(process.env.VIDEOS_PER_CHANNEL) || 20,
+  50
+);
+
 
 async function yt(endpoint, params = {}) {
   if (!YOUTUBE_API_KEY) throw new Error("Missing YOUTUBE_API_KEY");
