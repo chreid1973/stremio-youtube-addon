@@ -1,17 +1,17 @@
 // ────────────────────────────────────────────────────────────────
-//  YouTube Universe — Stremio Add-on with Categories & JSONBin Favorites
+//  YouTube Universe — Stremio Add-on with Per-Channel Catalogs
 // ────────────────────────────────────────────────────────────────
 
 import fetch from "node-fetch";
 import pkg from "stremio-addon-sdk";
 const { addonBuilder, serveHTTP } = pkg;
 
-// ── Environment Variables (set these in Render) ────────────────
+// ── Environment Variables ──────────────────────────────
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 const JSONBIN_ID = process.env.JSONBIN_ID;
 const JSONBIN_KEY = process.env.JSONBIN_KEY;
 
-// ── Channel Groups ─────────────────────────────────────────────
+// ── Channel Groups ─────────────────────────────────────
 const CHANNEL_GROUPS = {
   Tech: [
     { id: "UCXuqSBlHAE6Xw-yeJA0Tunw", name: "Linus Tech Tips" },
@@ -31,29 +31,31 @@ const CHANNEL_GROUPS = {
   ]
 };
 
-// ── Manifest ───────────────────────────────────────────────────
+// ── Manifest ───────────────────────────────────────────
 const manifest = {
   id: "community.youtube.universe",
-  version: "2.0.0",
+  version: "3.0.0",
   name: "YouTube Universe",
-  description: "Grouped YouTube channels and user favorites via JSONBin",
+  description: "Watch your favorite YouTube channels by category in Stremio",
   logo: "https://www.youtube.com/s/desktop/d743f786/img/favicon_144x144.png",
   resources: ["catalog", "meta", "stream"],
   types: ["tv", "series"],
   idPrefixes: ["yt"],
   catalogs: [
-    ...Object.keys(CHANNEL_GROUPS).map(g => ({
-      type: "series",
-      id: `youtube-${g.toLowerCase()}`,
-      name: `YouTube Universe: ${g}`
-    })),
+    ...Object.entries(CHANNEL_GROUPS).flatMap(([group, chans]) =>
+      chans.map(ch => ({
+        type: "series",
+        id: `youtube-${group.toLowerCase()}-${ch.id}`,
+        name: `YouTube Universe: ${group} – ${ch.name}`
+      }))
+    ),
     { type: "series", id: "youtube-user", name: "Your YouTube Favorites" }
   ]
 };
 
 const builder = new addonBuilder(manifest);
 
-// ── YouTube Helper ─────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────
 async function yt(endpoint, params = {}) {
   const url = new URL(`https://www.googleapis.com/youtube/v3/${endpoint}`);
   url.searchParams.append("key", YOUTUBE_API_KEY);
@@ -63,7 +65,6 @@ async function yt(endpoint, params = {}) {
   return r.json();
 }
 
-// ── JSONBin Helper ─────────────────────────────────────────────
 async function fetchBin() {
   if (!JSONBIN_ID) return [];
   const headers = JSONBIN_KEY ? { "X-Master-Key": JSONBIN_KEY } : {};
@@ -73,13 +74,18 @@ async function fetchBin() {
   return data.record.channels || [];
 }
 
-// ── Catalog Handler ────────────────────────────────────────────
+// ── Catalog Handler ────────────────────────────────────
 builder.defineCatalogHandler(async ({ id }) => {
   let channels = [];
 
-  const groupName = Object.keys(CHANNEL_GROUPS).find(g => `youtube-${g.toLowerCase()}` === id);
-  if (groupName) channels = CHANNEL_GROUPS[groupName];
-  else if (id === "youtube-user") {
+  // Match "youtube-tech-UCxxxx" style IDs
+  const match = id.match(/^youtube-(.+?)-([A-Za-z0-9_-]+)$/);
+  if (match) {
+    const [, group, channelId] = match;
+    const groupKey = Object.keys(CHANNEL_GROUPS).find(g => g.toLowerCase() === group);
+    const ch = CHANNEL_GROUPS[groupKey]?.find(c => c.id === channelId);
+    if (ch) channels = [ch];
+  } else if (id === "youtube-user") {
     try { channels = await fetchBin(); }
     catch (e) { console.warn("JSONBin fetch failed:", e.message); }
   }
@@ -115,7 +121,7 @@ builder.defineCatalogHandler(async ({ id }) => {
   return { metas };
 });
 
-// ── Meta Handler ───────────────────────────────────────────────
+// ── Meta Handler ───────────────────────────────────────
 builder.defineMetaHandler(async ({ id }) => {
   const vid = id.replace("yt:", "");
   try {
@@ -138,7 +144,7 @@ builder.defineMetaHandler(async ({ id }) => {
   }
 });
 
-// ── Stream Handler ─────────────────────────────────────────────
+// ── Stream Handler ─────────────────────────────────────
 builder.defineStreamHandler(async ({ id }) => {
   const vid = id.split(":")[1];
   return {
@@ -151,7 +157,7 @@ builder.defineStreamHandler(async ({ id }) => {
   };
 });
 
-// ── Serve with the Stremio SDK’s native server ────────────────
+// ── Serve with the Stremio SDK native server ───────────
 const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port });
 console.log(`✅ Add-on running at http://localhost:${port}/manifest.json`);
