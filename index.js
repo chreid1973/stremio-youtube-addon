@@ -296,22 +296,31 @@ const port = process.env.PORT || 7000;
 const addonInterface = builder.getInterface();
 const app = express();
 
-// 1) Serve static landing page (no template strings = no braces)
+// Serve static landing page
 app.use(express.static("public"));
 
-// 2) Serve manifest directly
+// Serve manifest directly (avoids SDK weirdness)
 app.get("/manifest.json", (_req, res) => {
   res.set("Content-Type", "application/json; charset=utf-8");
-  res.status(200).end(JSON.stringify(manifest));
+  res.status(200).json(manifest);
 });
 
-// 3) Health check
+// Health check
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
-// 4) Hand off everything else to addonInterface.serve(req, res)
+// Hand off to the correct interface style (old vs new SDK)
 app.use((req, res) => {
   try {
-    addonInterface.serve(req, res);
+    if (typeof addonInterface === "function") {
+      // ✅ Older SDKs — interface is a function
+      return addonInterface(req, res);
+    } else if (addonInterface && typeof addonInterface.serve === "function") {
+      // ✅ Newer SDKs — has .serve()
+      return addonInterface.serve(req, res);
+    } else {
+      console.error("❌ Unknown addonInterface type:", typeof addonInterface);
+      res.status(500).send("Invalid Stremio SDK interface");
+    }
   } catch (e) {
     console.error("❌ Addon serve error:", e);
     res.status(500).send("Internal Server Error");
@@ -320,6 +329,5 @@ app.use((req, res) => {
 
 app.listen(port, () => {
   const base = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
-  console.log(`✅ Add-on running: ${base}/  (manifest: ${base}/manifest.json)`);
+  console.log(`✅ Add-on running at: ${base}/  (manifest: ${base}/manifest.json)`);
 });
-
