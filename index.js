@@ -291,43 +291,9 @@ builder.defineStreamHandler(async ({ id }) => {
   return { streams: [{ title: "🎬 Open on YouTube", externalUrl: `https://www.youtube.com/watch?v=${videoId}` }] };
 });
 
-// ── START SERVER (Express + static landing) ─────────────
+// ── START SERVER (SDK default) ───────────────────────────
+import { serveHTTP } from "stremio-addon-sdk";
+
 const port = process.env.PORT || 7000;
-const addonInterface = builder.getInterface();
-const app = express();
-
-// Serve static landing page
-app.use(express.static("public"));
-
-// Serve manifest directly (avoids SDK weirdness)
-app.get("/manifest.json", (_req, res) => {
-  res.set("Content-Type", "application/json; charset=utf-8");
-  res.status(200).json(manifest);
-});
-
-// Health check
-app.get("/healthz", (_req, res) => res.json({ ok: true }));
-
-// Hand off to the correct interface style (old vs new SDK)
-app.use((req, res) => {
-  try {
-    if (typeof addonInterface === "function") {
-      // ✅ Older SDKs — interface is a function
-      return addonInterface(req, res);
-    } else if (addonInterface && typeof addonInterface.serve === "function") {
-      // ✅ Newer SDKs — has .serve()
-      return addonInterface.serve(req, res);
-    } else {
-      console.error("❌ Unknown addonInterface type:", typeof addonInterface);
-      res.status(500).send("Invalid Stremio SDK interface");
-    }
-  } catch (e) {
-    console.error("❌ Addon serve error:", e);
-    res.status(500).send("Internal Server Error");
-  }
-});
-
-app.listen(port, () => {
-  const base = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
-  console.log(`✅ Add-on running at: ${base}/  (manifest: ${base}/manifest.json)`);
-});
+serveHTTP(builder.getInterface(), { port });
+console.log(`✅ YouTube Universe running: http://localhost:${port}/manifest.json`);
