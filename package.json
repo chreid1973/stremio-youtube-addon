@@ -1,12 +1,9 @@
 {
   "name": "stremio-youtube-universe",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
-  "description": "Stremio add-on: YouTube Universe (low-quota RSS, saved lists, admin UI).",
   "main": "index.cjs",
-  "scripts": {
-    "start": "node index.cjs"
-  },
+  "scripts": { "start": "node index.cjs" },
   "dependencies": {
     "body-parser": "1.20.2",
     "express": "4.19.2",
@@ -14,7 +11,5 @@
     "stremio-addon-sdk": "1.6.2",
     "xml2js": "0.6.2"
   },
-  "engines": {
-    "node": ">=18"
-  }
+  "engines": { "node": ">=18" }
 }
