@@ -61,27 +61,47 @@ async function scrapeChannelIdFromPage(pageUrl) {
 }
 
 async function resolveChannelId(input) {
-  if (isChannelId(input)) return { channelId: input };
-  const urlGuess = tryExtractChannelIdFromUrl(input);
-  if (typeof urlGuess === "string") return { channelId: urlGuess };
-  if (urlGuess && urlGuess.handle) {
-    const id = await scrapeChannelIdFromPage(`https://www.youtube.com/${urlGuess.handle}`);
-    return id ? { channelId: id } : { error: `Cannot resolve ${urlGuess.handle}` };
+  const val = (input || "").trim();
+
+  // Raw UC… id
+  if (/^UC[0-9A-Za-z_-]{22}$/.test(val)) return { channelId: val };
+
+  // Try parsing as URL (robust, no regex escapes)
+  let asUrl = null;
+  try { asUrl = new URL(val); } catch (_) {}
+
+  // If it’s a URL, try direct channelId first
+  if (asUrl) {
+    const p = asUrl.pathname;
+    const mChannel = p.match(/^\/channel\/(UC[0-9A-Za-z_-]{22})/);
+    if (mChannel) return { channelId: mChannel[1] };
+
+    const mHandle = p.match(/^\/(@[A-Za-z0-9_.-]+)/);
+    if (mHandle) {
+      const id = await scrapeChannelIdFromPage(`https://www.youtube.com/${mHandle[1]}`);
+      return id ? { channelId: id } : { error: `Cannot resolve ${mHandle[1]}` };
+    }
+
+    const mUser = p.match(/^\/user\/([A-Za-z0-9_-]+)/);
+    if (mUser) {
+      const id = await scrapeChannelIdFromPage(`https://www.youtube.com/user/${mUser[1]}`);
+      return id ? { channelId: id } : { error: `Cannot resolve ${mUser[1]}` };
+    }
+
+    // Fallback: scrape whatever URL was provided
+    const id = await scrapeChannelIdFromPage(val);
+    return id ? { channelId: id } : { error: `Cannot resolve ${val}` };
   }
-  if (urlGuess && urlGuess.user) {
-    const id = await scrapeChannelIdFromPage(`https://www.youtube.com/user/${urlGuess.user}`);
-    return id ? { channelId: id } : { error: `Cannot resolve ${urlGuess.user}` };
+
+  // Bare @handle
+  if (/^@[A-Za-z0-9_.-]+$/.test(val)) {
+    const id = await scrapeChannelIdFromPage(`https://www.youtube.com/${val}`);
+    return id ? { channelId: id } : { error: `Cannot resolve ${val}` };
   }
-  if (/^@[A-Za-z0-9_.-]+$/.test(input)) {
-    const id = await scrapeChannelIdFromPage(`https://www.youtube.com/${input}`);
-    return id ? { channelId: id } : { error: `Cannot resolve ${input}` };
-  }
-  if (/^https?:\\/\\//i.test(input)) {
-    const id = await scrapeChannelIdFromPage(input);
-    return id ? { channelId: id } : { error: `Cannot resolve ${input}` };
-  }
+
   return { error: "Invalid channel input" };
 }
+
 
 async function fetchChannelRSS(channelId) {
   const res = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`);
