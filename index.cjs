@@ -331,6 +331,34 @@ document.getElementById('a').onclick=async()=>{const v=document.getElementById('
 await fetch(base+'/api/list/'+list+'/add',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({channel:v})});document.getElementById('i').value='';load();};
 load();</script></body></html>`);
 });
+// ---------- Root landing page ----------
+app.get("/", (req, res) => {
+  const base = `${req.protocol}://${req.get("host")}`;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.end(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>YouTube Universe Add-on for Stremio</title>
+<style>
+  body {font-family:sans-serif;background:#0b1020;color:#e6e9f2;text-align:center;padding:60px;}
+  a.button {display:inline-block;padding:12px 24px;margin-top:24px;background:#1b2450;color:#fff;
+    border-radius:8px;text-decoration:none;}
+  a.button:hover {background:#22306d;}
+</style>
+</head>
+<body>
+  <h1>🪐 YouTube Universe Add-on for Stremio</h1>
+  <p>Server is live ✅</p>
+  <p><b>Manifest:</b> <a href="${base}/manifest.json">${base}/manifest.json</a></p>
+  <a class="button"
+     href="https://web.strem.io/#/discover/series/youtube-user?addon=${encodeURIComponent(base + '/manifest.json')}">
+     Install in Stremio
+  </a>
+  <p style="margin-top:40px;">Manage your saved lists ➡️ 
+     <a href="${base}/admin/my-dev">${base}/admin/my-dev</a></p>
+</body></html>`);
+});
 
 // ---------- Port auto-retry ----------
 async function startServer(port) {
