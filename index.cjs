@@ -344,9 +344,7 @@ load();</script></body></html>`);
 app.get("/", (req, res) => {
   const base = getBase(req);
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.end(`<!doctype html> ... <a href="${base}/manifest.json">${base}/manifest.json</a> ...`);
-});
-
+  res.end(`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
