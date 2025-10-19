@@ -1,7 +1,7 @@
 {
   "name": "stremio-youtube-channels",
   "version": "1.0.5",
-  "main": "index.js",
+  "main": "index.cjs",
   "type": "module",
  {
   "scripts": {
