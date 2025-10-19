@@ -257,6 +257,16 @@ builder.defineStreamHandler(async ({ id }) => {
 const app = express();
 app.set("trust proxy", true); // respect X-Forwarded-Proto from Render
 
+// Allow Stremio Web to fetch our manifest & resources
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
+
 function getBase(req) {
   // prefer forwarded proto, fall back safely to https
   const proto = (req.headers["x-forwarded-proto"] || req.protocol || "https").split(",")[0];
