@@ -161,7 +161,8 @@ function buildManifest(baseUrl) {
 const builder = new addonBuilder(buildManifest(""));
 
 // Catalog handler
-builder.defineCatalogHandler(async ({ id, extra }) => {
+builder.defineCatalogHandler(async ({ id, extra = {} }) => {
+
   if (id === "youtube-user") {
     const query = (extra.search || "").trim();
     if (!query)
