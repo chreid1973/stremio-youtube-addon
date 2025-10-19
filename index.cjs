@@ -361,12 +361,11 @@ app.get(["/manifest.json", "/manifest"], (req, res) => {
 
 // Stremio addon interface
 const addonInterface = builder.getInterface();
-app.get(/^\/catalog\/.+\.json$/, addonInterface);
-app.get(/^\/catalog\/.+$/, addonInterface);
-app.get(/^\/meta\/.+\.json$/, addonInterface);
-app.get(/^\/meta\/.+$/, addonInterface);
-app.get(/^\/stream\/.+\.json$/, addonInterface);
-app.get(/^\/stream\/.+$/, addonInterface);
+
+// Use thin wrappers so Express receives a callback function (SDK returns an object otherwise)
+app.get(/^\/catalog\/.+(?:\.json)?$/, (req, res) => addonInterface(req, res));
+app.get(/^\/meta\/.+(?:\.json)?$/, (req, res) => addonInterface(req, res));
+app.get(/^\/stream\/.+(?:\.json)?$/, (req, res) => addonInterface(req, res));
 
 // ---------- Saved Lists Admin API ----------
 function normalizeChannelInput(str) { return (str || "").trim(); }
@@ -549,4 +548,3 @@ async function startServer(port) {
   const { port } = await startServer(DEFAULT_PORT);
   console.log(`HTTP addon accessible at: http://127.0.0.1:${port}/manifest.json`);
 })();
-
