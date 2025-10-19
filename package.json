@@ -1,16 +1,13 @@
 {
-  "name": "stremio-youtube-universe",
-  "version": "1.1.1",
-  "private": true,
-  "main": "index.cjs",
-  "scripts": { "start": "node index.cjs" },
-  "dependencies": {
-    "body-parser": "1.20.2",
-    "express": "4.19.2",
-    "node-fetch": "2.6.7",
-    "stremio-addon-sdk": "1.6.2",
-    "xml2js": "0.6.2"
+  "name": "stremio-youtube-addon",
+  "version": "3.4.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
   },
-  "engines": { "node": "20.x" }
-
+  "dependencies": {
+    "stremio-addon-sdk": "^1.6.11",
+    "node-fetch": "^3.3.2"
+  }
 }
