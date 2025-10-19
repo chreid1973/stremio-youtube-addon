@@ -362,10 +362,11 @@ app.get(["/manifest.json", "/manifest"], (req, res) => {
 // Stremio addon interface
 const addonInterface = builder.getInterface();
 
-// Use thin wrappers so Express receives a callback function (SDK returns an object otherwise)
+// Use thin wrappers so Express receives a callback function
 app.get(/^\/catalog\/.+(?:\.json)?$/, (req, res) => addonInterface(req, res));
 app.get(/^\/meta\/.+(?:\.json)?$/, (req, res) => addonInterface(req, res));
 app.get(/^\/stream\/.+(?:\.json)?$/, (req, res) => addonInterface(req, res));
+
 
 // ---------- Saved Lists Admin API ----------
 function normalizeChannelInput(str) { return (str || "").trim(); }
