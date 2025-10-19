@@ -257,7 +257,7 @@ builder.defineStreamHandler(async ({ id }) => {
 const app = express();
 app.set("trust proxy", true); // respect X-Forwarded-Proto from Render
 
-// Allow Stremio Web to fetch our manifest & resources
+// Allow Stremio Web to fetch our manifest & resources (CORS)
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -265,6 +265,7 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
+
 
 
 function getBase(req) {
