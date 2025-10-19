@@ -253,8 +253,16 @@ builder.defineStreamHandler(async ({ id }) => {
 });
 
 // ---------- Express setup ----------
+// after `const app = express();`
 const app = express();
-app.use(bodyParser.json());
+app.set("trust proxy", true); // respect X-Forwarded-Proto from Render
+
+function getBase(req) {
+  // prefer forwarded proto, fall back safely to https
+  const proto = (req.headers["x-forwarded-proto"] || req.protocol || "https").split(",")[0];
+  return `${proto}://${req.get("host")}`;
+}
+
 
 // Static images
 app.get("/static/logo.png", (_r, res) =>
@@ -266,9 +274,10 @@ app.get("/static/bg.png", (_r, res) =>
 
 // Manifest
 app.get(["/manifest", "/manifest.json"], (req, res) => {
-  const base = `${req.protocol}://${req.get("host")}`;
+  const base = getBase(req);
   res.json(buildManifest(base));
 });
+
 
 // Forward all addon routes safely
 const addonInterface = builder.getInterface();
@@ -333,9 +342,11 @@ load();</script></body></html>`);
 });
 // ---------- Root landing page ----------
 app.get("/", (req, res) => {
-  const base = `${req.protocol}://${req.get("host")}`;
+  const base = getBase(req);
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.end(`<!doctype html>
+  res.end(`<!doctype html> ... <a href="${base}/manifest.json">${base}/manifest.json</a> ...`);
+});
+
 <html lang="en">
 <head>
 <meta charset="utf-8" />
