@@ -30,15 +30,21 @@ function isChannelId(str) {
 function tryExtractChannelIdFromUrl(url) {
   try {
     const u = new URL(url);
-    const m1 = u.pathname.match(/\\/channel\\/(UC[0-9A-Za-z_-]{22})/);
-    if (m1) return m1[1];
-    const m2 = u.pathname.match(/^\\/(@[A-Za-z0-9_.-]+)/);
-    if (m2) return { handle: m2[1] };
-    const m3 = u.pathname.match(/^\\/user\\/([A-Za-z0-9_-]+)/);
-    if (m3) return { user: m3[1] };
+    // /channel/UCxxxx
+    const mChannel = u.pathname.match(/^\/channel\/(UC[0-9A-Za-z_-]{22})/);
+    if (mChannel) return mChannel[1];
+
+    // /@handle -> needs fetch to resolve
+    const mHandle = u.pathname.match(/^\/(@[A-Za-z0-9_.-]+)/);
+    if (mHandle) return { handle: mHandle[1] };
+
+    // /user/username -> needs fetch to resolve
+    const mUser = u.pathname.match(/^\/user\/([A-Za-z0-9_-]+)/);
+    if (mUser) return { user: mUser[1] };
   } catch (_) {}
   return null;
 }
+
 
 async function scrapeChannelIdFromPage(pageUrl) {
   try {
